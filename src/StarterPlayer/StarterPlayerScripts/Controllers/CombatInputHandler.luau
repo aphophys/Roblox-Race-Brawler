@@ -8,6 +8,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Network = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"))
 
+local ActionButtonController = require(script.Parent.Parent:WaitForChild("UI_And_Visuals"):WaitForChild("ActionButtonController"))
+
 local CombatInputHandler = {}
 
 function CombatInputHandler.RequestTargetedSkill(skillId: string)
@@ -22,9 +24,10 @@ function CombatInputHandler.RequestSelfSkill(skillId: string)
 	Network.Combat.FireSelfSkill:FireServer(skillId)
 end
 
+-- Same context-sensitive action as clicking the bottom-center HUD button —
+-- see ActionButtonController for the state -> action mapping.
 function CombatInputHandler.RequestCarryRelease()
-	-- TODO: decide pickup vs release based on local carry state, fire the
-	-- matching remote (UseTrackItem / DepositFans).
+	ActionButtonController.TriggerCurrentAction()
 end
 
 function CombatInputHandler.Init()

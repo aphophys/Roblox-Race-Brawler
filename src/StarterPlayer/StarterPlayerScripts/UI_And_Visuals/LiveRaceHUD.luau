@@ -1,9 +1,16 @@
 --!strict
 --[[
 	LiveRaceHUD
-	Top-left HUD quadrant: Grand Prix standings list + checkpoint/lap
-	counter. Binds to StarterGui.MainHUD.TopLeft (declared in
-	default.project.json), cloning EntryTemplate per standing.
+	Grand Prix standings list (StarterGui.MainHUD.StandingsPanel, right
+	side) + the checkpoint/lap counter (its own capsule in the top-center
+	StatsRow, StarterGui.MainHUD.StatsRow.CheckpointCapsule.LapLabel).
+	Clones EntryTemplate per standing.
+
+	StandingsPanel starts Visible = false (default.project.json) and is
+	only shown while GrandPrixManager reports an actual Grand Prix in
+	progress (Countdown/Racing) — via the new Network.Track.
+	GrandPrixStateChanged broadcast — instead of always showing an empty
+	panel outside of Grand Prix hours.
 
 	NOTE: the checkpoint counter reads a "CheckpointOrdinal" player
 	attribute that nothing sets yet — GrandPrixManager tracks it in
@@ -25,11 +32,16 @@ export type StandingEntry = {
 
 local LiveRaceHUD = {}
 
-local function onStandingsUpdated(standings: { StandingEntry })
+local function getStandingsPanel() : Frame?
 	local playerGui = localPlayer:FindFirstChild("PlayerGui")
 	local mainHud = playerGui and playerGui:FindFirstChild("MainHUD")
-	local topLeft = mainHud and mainHud:FindFirstChild("TopLeft")
-	local standingsList = topLeft and topLeft:FindFirstChild("StandingsList")
+	local standingsPanel = mainHud and mainHud:FindFirstChild("StandingsPanel")
+	return standingsPanel :: Frame?
+end
+
+local function onStandingsUpdated(standings: { StandingEntry })
+	local standingsPanel = getStandingsPanel()
+	local standingsList = standingsPanel and standingsPanel:FindFirstChild("StandingsList")
 	local entryTemplate = standingsList and standingsList:FindFirstChild("EntryTemplate")
 	if standingsList == nil or entryTemplate == nil then
 		return
@@ -51,21 +63,34 @@ local function onStandingsUpdated(standings: { StandingEntry })
 	end
 end
 
+local function onGrandPrixStateChanged(state: unknown)
+	if typeof(state) ~= "string" then
+		return
+	end
+	local standingsPanel = getStandingsPanel()
+	if standingsPanel ~= nil then
+		standingsPanel.Visible = state == "Countdown" or state == "Racing"
+	end
+end
+
 local function updateLapLabel()
 	local playerGui = localPlayer:FindFirstChild("PlayerGui")
 	local mainHud = playerGui and playerGui:FindFirstChild("MainHUD")
-	local topLeft = mainHud and mainHud:FindFirstChild("TopLeft")
-	local lapLabel = topLeft and topLeft:FindFirstChild("LapLabel")
+	local statsRow = mainHud and mainHud:FindFirstChild("StatsRow")
+	local checkpointCapsule = statsRow and statsRow:FindFirstChild("CheckpointCapsule")
+	local lapLabel = checkpointCapsule and checkpointCapsule:FindFirstChild("LapLabel")
 	if lapLabel == nil then
 		return
 	end
 
 	local ordinal = (localPlayer:GetAttribute("CheckpointOrdinal") :: number?) or 0
-	(lapLabel :: TextLabel).Text = `Checkpoint {ordinal} / 8`
+	local lapLabelText = lapLabel :: TextLabel
+	lapLabelText.Text = `Checkpoint {ordinal} / 8`
 end
 
 function LiveRaceHUD.Init()
 	Network.Track.UpdateRaceStandings.OnClientEvent:Connect(onStandingsUpdated)
+	Network.Track.GrandPrixStateChanged.OnClientEvent:Connect(onGrandPrixStateChanged)
 	localPlayer:GetAttributeChangedSignal("CheckpointOrdinal"):Connect(updateLapLabel)
 	updateLapLabel()
 end

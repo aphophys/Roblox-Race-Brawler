@@ -1,12 +1,12 @@
 --!strict
 --[[
 	CurrencyDisplay
-	New module — top-right HUD quadrant: Gold/Fans labels. Binds to
-	StarterGui.MainHUD.TopRight (default.project.json) and reads the Gold/
-	TotalFans player attributes set once by ProfileManager.SyncAttributes
-	on load. Live updates only happen if something calls SyncAttributes
-	again server-side — nothing does yet (see ProfileManager's docstring),
-	so today this shows accurate starting values but won't move during play.
+	Gold/Fans labels — each lives in its own pill-shaped capsule in the
+	top-center StatsRow (StarterGui.MainHUD.StatsRow.GoldCapsule/
+	FansCapsule, default.project.json). Reads the Gold/TotalFans player
+	attributes set by ProfileManager.SyncAttributes. Live updates whenever
+	those attributes change (fan deposits, HubShoppingManager purchases,
+	etc. all call SyncAttributes again after mutating).
 ]]
 
 local Players = game:GetService("Players")
@@ -20,13 +20,15 @@ local CurrencyDisplay = {}
 local function getLabels() : (TextLabel?, TextLabel?)
 	local playerGui = localPlayer:FindFirstChild("PlayerGui")
 	local mainHud = playerGui and playerGui:FindFirstChild("MainHUD")
-	local topRight = mainHud and mainHud:FindFirstChild("TopRight")
-	if topRight == nil then
+	local statsRow = mainHud and mainHud:FindFirstChild("StatsRow")
+	if statsRow == nil then
 		return nil, nil
 	end
 
-	local goldLabel = topRight:FindFirstChild("GoldLabel")
-	local fansLabel = topRight:FindFirstChild("FansLabel")
+	local goldCapsule = statsRow:FindFirstChild("GoldCapsule")
+	local fansCapsule = statsRow:FindFirstChild("FansCapsule")
+	local goldLabel = goldCapsule and goldCapsule:FindFirstChild("GoldLabel")
+	local fansLabel = fansCapsule and fansCapsule:FindFirstChild("FansLabel")
 	return goldLabel :: TextLabel?, fansLabel :: TextLabel?
 end
 

@@ -9,9 +9,11 @@
 	task.wait()/task.spawn() only).
 ]]
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TrackBlueprints = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("TrackBlueprints"))
 local PlayerState = require(ReplicatedStorage:WaitForChild("Enums"):WaitForChild("PlayerState"))
+local Network = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"))
 
 local TrackGenerator = require(script.Parent:WaitForChild("TrackGenerator"))
 local PlayerStateService = require(script.Parent.Parent:WaitForChild("CombatAndMovement"):WaitForChild("PlayerStateService"))
@@ -35,6 +37,15 @@ local currentState: RaceState = "Waiting"
 local nextRaceStartTime: number = os.time() + RACE_INTERVAL_SECONDS
 local racerStatuses: { [Player]: RacerStatus } = {}
 
+-- Broadcast so the client can gate UI (e.g. LiveRaceHUD only shows the
+-- Grand Prix standings panel during Countdown/Racing) on whether a Grand
+-- Prix is actually happening, instead of always showing an empty panel.
+local function broadcastState()
+	for _, player in Players:GetPlayers() do
+		Network.Track.GrandPrixStateChanged:FireClient(player, currentState)
+	end
+end
+
 -- ===== State transition handlers (scaffolding) =====
 
 local function enterWaiting()
@@ -42,10 +53,12 @@ local function enterWaiting()
 	racerStatuses = {}
 	nextRaceStartTime = os.time() + RACE_INTERVAL_SECONDS
 	-- TODO: open Hub access, disable track hazards.
+	broadcastState()
 end
 
 local function enterCountdown()
 	currentState = "Countdown"
+	broadcastState()
 	-- TODO: lock in the roster, teleport racers to Segment_01_StartLine,
 	-- initialize racerStatuses for each participant with MAX_LIVES. Once
 	-- that exists, this loop will actually have entries — harmless no-op
@@ -58,12 +71,14 @@ end
 local function enterRacing()
 	currentState = "Racing"
 	-- TODO: enable hazards (AssemblyAngularVelocity), start lap tracking.
+	broadcastState()
 end
 
 local function enterEnded()
 	currentState = "Ended"
 	-- TODO: broadcast standings via Network.Track.UpdateRaceStandings,
 	-- pay out fan rewards through ProfileManager.
+	broadcastState()
 
 	for player in racerStatuses do
 		PlayerStateService.SetState(player, PlayerState.InLobby)
@@ -98,11 +113,12 @@ function GrandPrixManager.HandleRacerDown(player: Player)
 	end
 end
 
--- `checkpointOrdinal` is whole-course (1-8, one per ReplicatedStorage.
--- Configs.CourseSequence stop), not per-track-type — TrackBlueprints'
--- single Oval checkpoint currently reports ordinal 1 since Oval is
--- CourseSequence stop 1. Only the Oval exists as real geometry today, so
--- in practice this only ever receives 1 until more course stops are built.
+-- `checkpointOrdinal` is 1-8, one per oval segment (TrackBlueprints.
+-- OvalSegments/CheckpointOrdinal) — NOT wired to anything today, since
+-- CheckpointValidator (the actual, active checkpoint system driving
+-- ArcadeManager's free-run track) tracks progress itself and never calls
+-- this function. This whole roster/GrandPrix-scoped checkpoint path
+-- remains part of the still-unimplemented Countdown/roster flow.
 function GrandPrixManager.HandleCheckpointReached(player: Player, checkpointOrdinal: number)
 	local status = racerStatuses[player]
 	if status == nil or status.IsEliminated then
@@ -145,6 +161,14 @@ end
 
 function GrandPrixManager.Init()
 	enterWaiting()
+
+	-- enterWaiting()'s broadcastState() above fires before anyone has
+	-- joined; catch up anyone who joins after that (which, in practice, is
+	-- everyone) with the state as of the moment they load in.
+	Players.PlayerAdded:Connect(function(player: Player)
+		Network.Track.GrandPrixStateChanged:FireClient(player, currentState)
+	end)
+
 	task.spawn(runLoop)
 end
 

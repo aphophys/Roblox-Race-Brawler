@@ -38,14 +38,15 @@ function ProfileManager.GetProfile(player: Player) : Profile?
 	return activeProfiles[player]
 end
 
--- Copies the subset of profile.Data that client UI needs to display onto
--- player Attributes (Gold, TotalFans, Lives) — the only replication path
--- currently wired up. IMPORTANT: this is a one-shot copy, not a live
--- binding. Anything that mutates these fields on profile.Data later (shop
--- purchases, fan deposits, life loss) must call this again afterward, or
--- the client-facing attribute will silently go stale. No such mutation
--- exists yet (HubShoppingManager/fan deposit flow are still stubs), so
--- today this only ever reflects each player's starting values.
+-- Copies the subset of profile.Data that client UI needs to display/read
+-- onto player Attributes (Gold, TotalFans, Lives, EquippedSkill1-3) — the
+-- only replication path currently wired up. IMPORTANT: this is a one-shot
+-- copy, not a live binding — call it again after mutating any of these
+-- fields on profile.Data (deposits, purchases, life loss, loadout changes)
+-- or the client-facing attribute goes stale. CarryItemService and
+-- LoadoutService both call this after their mutations; fan deposits/shop
+-- purchases don't mutate anything yet (still stubs), so Gold/TotalFans
+-- only ever reflect starting values today.
 function ProfileManager.SyncAttributes(player: Player)
 	local profile = activeProfiles[player]
 	if profile == nil then
@@ -55,6 +56,20 @@ function ProfileManager.SyncAttributes(player: Player)
 	player:SetAttribute("Gold", profile.Data.Gold)
 	player:SetAttribute("TotalFans", profile.Data.TotalFans)
 	player:SetAttribute("Lives", profile.Data.Lives)
+	player:SetAttribute("TotalLapsCompleted", profile.Data.TotalLapsCompleted)
+
+	for slotIndex = 1, 3 do
+		player:SetAttribute(`EquippedSkill{slotIndex}`, profile.Data.EquippedSkills[slotIndex] or "")
+	end
+
+	-- One SkillLevel_<id> attribute per owned skill, so the Skill Shop panel
+	-- can show current levels (and react to HubShoppingManager upgrading
+	-- one) without a RemoteFunction round-trip.
+	for skillId, skillData in profile.Data.Skills do
+		if skillData.Unlocked then
+			player:SetAttribute(`SkillLevel_{skillId}`, skillData.Level)
+		end
+	end
 end
 
 local function onPlayerAdded(player: Player)

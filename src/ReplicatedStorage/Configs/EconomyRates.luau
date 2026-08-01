@@ -14,6 +14,8 @@ export type EconomyRatesType = {
 	FanDepositGoldPerFan: number,
 	FanDepositBonusThreshold: number,
 	FanDepositBonusMultiplier: number,
+	LapCompletionGoldReward: number, -- granted once per completed lap (checkpoint 8 -> back to 1), by CheckpointValidator
+	LapCompletionFanReward: number,
 	SpeedUpgradeCosts: { UpgradeCost },
 	CarryCapacityUpgradeCosts: { UpgradeCost },
 }
@@ -22,6 +24,8 @@ local EconomyRates: EconomyRatesType = {
 	FanDepositGoldPerFan = 1,
 	FanDepositBonusThreshold = 100,
 	FanDepositBonusMultiplier = 1.5,
+	LapCompletionGoldReward = 10,
+	LapCompletionFanReward = 5,
 
 	SpeedUpgradeCosts = {
 		{ Level = 1, GoldCost = 100 },

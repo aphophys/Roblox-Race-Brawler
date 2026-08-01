@@ -25,6 +25,7 @@ export type EffectDefinition = {
 	IsControlScramble: boolean,
 	ControlScrambleMode: ControlScrambleMode?, -- set only if IsControlScramble
 	GrantsImmunity: boolean, -- true = this is a shield (suppresses the next incoming effect of a polarity), not a stat/control modifier
+	IsStun: boolean, -- true = "briefly stops you in your tracks"; CarryItemService checks this to drop a carried Fan Payload when it lands
 }
 
 export type EffectsCatalogType = { [string]: EffectDefinition }
@@ -32,55 +33,55 @@ export type EffectsCatalogType = { [string]: EffectDefinition }
 local Catalog: EffectsCatalogType = {
 	SlowGlobal = {
 		Id = "SlowGlobal", DisplayName = "Track-Wide Slow", Polarity = "Bad",
-		AffectsStats = { "WalkSpeed", "ClimbSpeed", "SwimSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false,
+		AffectsStats = { "WalkSpeed", "ClimbSpeed", "SwimSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false, IsStun = false,
 	},
 	ScrambleGlobal = {
 		Id = "ScrambleGlobal", DisplayName = "Track-Wide Scramble", Polarity = "Bad",
-		AffectsStats = {}, IsControlScramble = true, ControlScrambleMode = "Randomize", GrantsImmunity = false,
+		AffectsStats = {}, IsControlScramble = true, ControlScrambleMode = "Randomize", GrantsImmunity = false, IsStun = false,
 	},
 	SlowTarget = {
 		Id = "SlowTarget", DisplayName = "Slow", Polarity = "Bad",
-		AffectsStats = { "WalkSpeed", "ClimbSpeed", "SwimSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false,
+		AffectsStats = { "WalkSpeed", "ClimbSpeed", "SwimSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false, IsStun = false,
 	},
 	ReverseControlTarget = {
 		Id = "ReverseControlTarget", DisplayName = "Reverse Control", Polarity = "Bad",
-		AffectsStats = {}, IsControlScramble = true, ControlScrambleMode = "Invert", GrantsImmunity = false,
+		AffectsStats = {}, IsControlScramble = true, ControlScrambleMode = "Invert", GrantsImmunity = false, IsStun = false,
 	},
 	WeightTarget = {
 		Id = "WeightTarget", DisplayName = "Weight Down", Polarity = "Bad",
-		AffectsStats = { "JumpPower", "ClimbSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false,
+		AffectsStats = { "JumpPower", "ClimbSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false, IsStun = false,
 	},
 	BlindTarget = {
 		Id = "BlindTarget", DisplayName = "Blind", Polarity = "Bad",
-		AffectsStats = {}, IsControlScramble = true, ControlScrambleMode = "Blind", GrantsImmunity = false,
+		AffectsStats = {}, IsControlScramble = true, ControlScrambleMode = "Blind", GrantsImmunity = false, IsStun = false,
 	},
 	ShockTarget = {
 		Id = "ShockTarget", DisplayName = "Shock", Polarity = "Bad",
-		AffectsStats = { "WalkSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false,
+		AffectsStats = { "WalkSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false, IsStun = true,
 	},
 	DashBoost = {
 		Id = "DashBoost", DisplayName = "Dash Momentum", Polarity = "Good",
-		AffectsStats = { "WalkSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false,
+		AffectsStats = { "WalkSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false, IsStun = false,
 	},
 	SpeedBoostSelf = {
 		Id = "SpeedBoostSelf", DisplayName = "Speed Boost", Polarity = "Good",
-		AffectsStats = { "WalkSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false,
+		AffectsStats = { "WalkSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false, IsStun = false,
 	},
 	SwimBurstSelf = {
 		Id = "SwimBurstSelf", DisplayName = "Swim Burst", Polarity = "Good",
-		AffectsStats = { "SwimSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false,
+		AffectsStats = { "SwimSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false, IsStun = false,
 	},
 	ClimbGripSelf = {
 		Id = "ClimbGripSelf", DisplayName = "Climb Grip", Polarity = "Good",
-		AffectsStats = { "ClimbSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false,
+		AffectsStats = { "ClimbSpeed" }, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = false, IsStun = false,
 	},
 	ShieldSelf = {
 		Id = "ShieldSelf", DisplayName = "Shield", Polarity = "Good",
-		AffectsStats = {}, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = true,
+		AffectsStats = {}, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = true, IsStun = false,
 	},
 	PhaseSelf = {
 		Id = "PhaseSelf", DisplayName = "Phase", Polarity = "Good",
-		AffectsStats = {}, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = true,
+		AffectsStats = {}, IsControlScramble = false, ControlScrambleMode = nil, GrantsImmunity = true, IsStun = false,
 	},
 }
 

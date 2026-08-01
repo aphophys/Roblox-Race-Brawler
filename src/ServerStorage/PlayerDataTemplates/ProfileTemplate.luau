@@ -20,7 +20,12 @@ export type ProfileData = {
 	TotalFans: number,
 	Lives: number,
 	LastCheckpointOrdinal: number,
+	TotalLapsCompleted: number, -- incremented by CheckpointValidator whenever checkpoint 8 -> 1 (a full lap)
 	Skills: { [string]: SkillData },
+	-- Fixed 3-slot loadout — which owned skill Skill1/2/3 casts while
+	-- InRace. nil slot = empty. LoadoutService enforces no skill occupying
+	-- two slots at once.
+	EquippedSkills: { string? },
 	Inventory: { string },
 	Settings: {
 		MusicEnabled: boolean,
@@ -38,15 +43,15 @@ local ProfileTemplate: ProfileData = {
 	TotalFans = 0,
 	Lives = 3,
 	LastCheckpointOrdinal = 1,
-	-- Starter kit matches ControlMapper's default Skill1/2/3 HUD loadout
-	-- (PositionSwap/SlowGlobal/DashSelf) so a fresh playtester can
-	-- actually exercise all 3 CastType categories - Target, Global, and
-	-- Self - without needing the shop, which is still a stub.
+	TotalLapsCompleted = 0,
+	-- The 3 basic skills every player starts with, per spec: Position Swap,
+	-- Reverse Control, Dash. Pre-equipped in the same order.
 	Skills = {
 		PositionSwap = { Level = 1, Unlocked = true },
-		SlowGlobal = { Level = 1, Unlocked = true },
+		ReverseControlTarget = { Level = 1, Unlocked = true },
 		DashSelf = { Level = 1, Unlocked = true },
 	},
+	EquippedSkills = { "PositionSwap", "ReverseControlTarget", "DashSelf" },
 	Inventory = {},
 	Settings = {
 		MusicEnabled = true,

@@ -1,34 +1,41 @@
 --!strict
 --[[
 	FanBoxTiers
-	The 5 crowd-size tiers for a player's Dynamic Fan Box, keyed to their
-	TotalFans count. Tier 1 is also what an unoccupied fan box looks like
-	(FanBoxGenerator builds every pod at Tiers[1] scale by default).
+	The 5 crowd tiers for a player's Dynamic Fan Box, keyed to their
+	TotalFans count. Tier 1 ("Empty") is also what every pod is built as by
+	default before a player is assigned (FanBoxGenerator/FanBoxSlotManager
+	swap in the tier matching a player's actual fan count on assignment,
+	and again live as it grows — see FanBoxCrowdTemplates).
 
-	PodBaseSize sized up to read as "100+ NPCs" at a glance while still
-	being a single Part/mesh (no Toolbox access to source or place actual
-	crowd character models) — a big block stand, not a literal crowd.
+	Tiers are visually distinguished by CROWD DENSITY (how many noob
+	figures stand on the stand's steps — see FanBoxCrowdTemplates.
+	NOOBS_PER_STEP_BY_TIER), not by resizing a single shape — an earlier
+	version scaled a shared mesh via tier.MeshScale, which visibly lifted/
+	sank the whole crowd off the ground (the mesh's natural bounding box
+	never matched PodBaseSize, so even "1x scale" was a distorting resize).
+	MeshScale was removed for that reason; PodBaseSize is still read by
+	FanBoxCrowdTemplates for the stand's fixed footprint (width for
+	spacing figures, not for scaling anything).
 ]]
 
 export type FanBoxTier = {
 	MinFans: number,
 	DisplayName: string,
-	MeshScale: Vector3,
 }
 
 export type FanBoxTiersType = {
-	PodBaseSize: Vector3, -- unscaled CrowdMesh size, before any tier's MeshScale is applied. Shared by FanBoxGenerator (server, initial build) and FansBoxRenderer (client, tween target) so both compute the same absolute size independently.
+	PodBaseSize: Vector3, -- fixed stand footprint (width used to space figures across each step) — identical for every tier.
 	Tiers: { FanBoxTier },
 }
 
 local FanBoxTiers: FanBoxTiersType = {
 	PodBaseSize = Vector3.new(24, 18, 14),
 	Tiers = {
-		{ MinFans = 0, DisplayName = "Empty", MeshScale = Vector3.new(1, 1, 1) },
-		{ MinFans = 101, DisplayName = "Small Crowd", MeshScale = Vector3.new(1.3, 1.3, 1.3) },
-		{ MinFans = 1001, DisplayName = "Growing Crowd", MeshScale = Vector3.new(1.6, 1.6, 1.6) },
-		{ MinFans = 10001, DisplayName = "Big Crowd", MeshScale = Vector3.new(2, 2, 2) },
-		{ MinFans = 100001, DisplayName = "Superstar Crowd", MeshScale = Vector3.new(2.5, 2.5, 2.5) },
+		{ MinFans = 0, DisplayName = "Empty" },
+		{ MinFans = 101, DisplayName = "Small Crowd" },
+		{ MinFans = 1001, DisplayName = "Growing Crowd" },
+		{ MinFans = 10001, DisplayName = "Big Crowd" },
+		{ MinFans = 100001, DisplayName = "Superstar Crowd" },
 	},
 }
 

@@ -13,6 +13,11 @@
 	0 (unconfigured placeholder) — logs a warning and returns
 	NotProcessedYet instead of guessing. Real IDs live in exactly one place:
 	ReplicatedStorage.Configs.MonetizationConfigs.
+
+	Fires the pooled/stacking toast (Network.Track.ShowNotification, "Pop"
+	style — the bouncy currency-gain effect) on every successful grant, same
+	as the other currency-gain sources (CarryItemService's fan deposit,
+	CheckpointValidator's lap reward).
 ]]
 
 local MarketplaceService = game:GetService("MarketplaceService")
@@ -20,6 +25,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local MonetizationConfigs = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("MonetizationConfigs"))
+local Network = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"))
+local Utils = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Utils"))
 local ProfileManager = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("ProfileManager"))
 
 local ProcessReceiptManager = {}
@@ -64,6 +71,13 @@ local function processReceipt(receiptInfo: any) : Enum.ProductPurchaseDecision
 
 	profile.Data.GrantedPurchaseIds[purchaseId] = true
 	ProfileManager.SyncAttributes(player)
+
+	local currencyEmoji = if product.GrantCurrency == "Gold" then "🪙" else "🌟"
+	Network.Track.ShowNotification:FireClient(
+		player,
+		`+{Utils.FormatNumber(product.GrantAmount)} {currencyEmoji} {product.GrantCurrency == "Gold" and "GOLD" or "FANS"}!`,
+		"Pop"
+	)
 
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end

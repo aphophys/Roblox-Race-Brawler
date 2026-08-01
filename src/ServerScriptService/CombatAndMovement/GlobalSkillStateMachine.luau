@@ -11,6 +11,11 @@
 	itself only applies to players who are currently InRace too — a Hub or
 	Fan Box visitor shouldn't be slowed by a track-wide skill they're not
 	part of.
+
+	CastSkillDirect is the test-cast entry point for a carried SkillPickup
+	(CarryItemService.ReleaseTrackItem) — Level 1 stats, no ownership/
+	cooldown check, but STILL respects the Idle/Active/Cooldown gate (a
+	test cast shouldn't be able to stack with or interrupt a real one).
 ]]
 
 local Players = game:GetService("Players")
@@ -32,6 +37,39 @@ local GlobalSkillStateMachine = {}
 
 local currentState: GlobalSkillState = "Idle"
 local activeSkillId: string? = nil
+
+-- Shared by tryActivate (owned skill, real level) and CastSkillDirect
+-- (test cast, Level 1). Assumes the Idle gate was already checked by the
+-- caller.
+local function activate(caster: Player, skillId: string, skillDefinition: SkillTrees.SkillDefinition, levelData: SkillTrees.SkillLevelData, atPeakLevel: boolean)
+	currentState = "Active"
+	activeSkillId = skillId
+
+	Network.Combat.SkillCastResult:FireClient(caster, skillId, levelData.CooldownSeconds)
+
+	for _, player in Players:GetPlayers() do
+		if PlayerStateService.GetState(player) ~= PlayerState.InRace then
+			continue
+		end
+		EffectStackManager.TryApplyEffect(
+			player,
+			skillDefinition.LinkedEffectId :: string,
+			"Global",
+			levelData.EffectMagnitude,
+			levelData.EffectDurationSeconds,
+			atPeakLevel
+		)
+		Network.Track.ShowNotification:FireClient(player, skillDefinition.ActivationNoticeText)
+	end
+
+	task.spawn(function()
+		task.wait(levelData.EffectDurationSeconds)
+		currentState = "Cooldown"
+		task.wait(math.max(levelData.CooldownSeconds - levelData.EffectDurationSeconds, 0))
+		currentState = "Idle"
+		activeSkillId = nil
+	end)
+end
 
 local function tryActivate(caster: Player, skillId: string) : boolean
 	if currentState ~= "Idle" then
@@ -66,33 +104,27 @@ local function tryActivate(caster: Player, skillId: string) : boolean
 		return false
 	end
 
-	currentState = "Active"
-	activeSkillId = skillId
-
 	local atPeakLevel = skillData.Level >= skillDefinition.MaxLevel
-	for _, player in Players:GetPlayers() do
-		if PlayerStateService.GetState(player) ~= PlayerState.InRace then
-			continue
-		end
-		EffectStackManager.TryApplyEffect(
-			player,
-			skillDefinition.LinkedEffectId :: string,
-			"Global",
-			levelData.EffectMagnitude,
-			levelData.EffectDurationSeconds,
-			atPeakLevel
-		)
+	activate(caster, skillId, skillDefinition, levelData, atPeakLevel)
+	return true
+end
+
+function GlobalSkillStateMachine.CastSkillDirect(caster: Player, skillId: string)
+	if currentState ~= "Idle" then
+		return
 	end
 
-	task.spawn(function()
-		task.wait(levelData.EffectDurationSeconds)
-		currentState = "Cooldown"
-		task.wait(math.max(levelData.CooldownSeconds - levelData.EffectDurationSeconds, 0))
-		currentState = "Idle"
-		activeSkillId = nil
-	end)
+	local skillDefinition = SkillTrees[skillId]
+	if skillDefinition == nil or skillDefinition.CastType ~= "Global" or skillDefinition.LinkedEffectId == nil then
+		return
+	end
 
-	return true
+	local levelData = skillDefinition.Levels[1]
+	if levelData == nil then
+		return
+	end
+
+	activate(caster, skillId, skillDefinition, levelData, false)
 end
 
 function GlobalSkillStateMachine.GetState() : GlobalSkillState

@@ -14,12 +14,17 @@ local PlayerStateController = require(script.Parent.Controllers.PlayerStateContr
 local CombatInputHandler = require(script.Parent.Controllers.CombatInputHandler)
 
 local BubblyTextEngine = require(script.Parent.UI_And_Visuals.BubblyTextEngine)
-local FansBoxRenderer = require(script.Parent.UI_And_Visuals.FansBoxRenderer)
 local LiveRaceHUD = require(script.Parent.UI_And_Visuals.LiveRaceHUD)
 local CurrencyDisplay = require(script.Parent.UI_And_Visuals.CurrencyDisplay)
 local ActionButtonController = require(script.Parent.UI_And_Visuals.ActionButtonController)
 local ShopUIController = require(script.Parent.UI_And_Visuals.ShopUIController)
+local MainMenuController = require(script.Parent.UI_And_Visuals.MainMenuController)
+local SkillShopController = require(script.Parent.UI_And_Visuals.SkillShopController)
 local PoseUIController = require(script.Parent.UI_And_Visuals.PoseUIController)
+local LocationToggleController = require(script.Parent.UI_And_Visuals.LocationToggleController)
+local SkillLoadoutController = require(script.Parent.UI_And_Visuals.SkillLoadoutController)
+local CooldownDisplayController = require(script.Parent.UI_And_Visuals.CooldownDisplayController)
+local NotificationController = require(script.Parent.UI_And_Visuals.NotificationController)
 
 -- State/input first: UI reacts to state, not the other way around.
 PlayerStateController.Init()
@@ -27,11 +32,16 @@ ControlMapper.Init()
 CombatInputHandler.Init()
 
 -- Visuals/UI.
-FansBoxRenderer.Init()
 LiveRaceHUD.Init()
 CurrencyDisplay.Init()
 ActionButtonController.Init()
 ShopUIController.Init()
+MainMenuController.Init()
+SkillShopController.Init()
 PoseUIController.Init()
+LocationToggleController.Init()
+SkillLoadoutController.Init()
+CooldownDisplayController.Init()
+NotificationController.Init()
 
 -- BubblyTextEngine exposes stateless helpers only (PlayPop/ShowAnnouncement) — no Init().

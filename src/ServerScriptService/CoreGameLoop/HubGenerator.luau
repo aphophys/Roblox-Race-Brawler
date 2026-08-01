@@ -22,7 +22,21 @@ local TrackGeometry = require(ReplicatedStorage:WaitForChild("Configs"):WaitForC
 
 local TrackPieceBuilder = require(script.Parent:WaitForChild("TrackPieceBuilder"))
 
-local HUB_RADIUS = 140
+-- The Hub sits at the oval's centroid; the closest the track's own paved
+-- surface ever gets to that centroid is along the two straights, at
+-- distance (CurveRadius - SegmentWidth/2) — the two straights sit exactly
+-- 2*CurveRadius apart, straddling the centroid, and the road's inner edge
+-- is SegmentWidth/2 in from its centerline. Deriving HUB_RADIUS from that
+-- (with a real safety margin) instead of a hand-picked number: a
+-- previous flat 140 studs left only ~4 studs of actual clearance against
+-- the track edge at TrackGeometry's current values (CurveRadius=180,
+-- SegmentWidth=72 -> 180-36=144) — razor-thin enough that a HazardBar (a
+-- spinning rod placed at a random segment's midpoint) reportedly ended up
+-- visibly inside the Commercial Hub. This also means HUB_RADIUS
+-- automatically stays safe if TrackGeometry's dimensions ever change,
+-- instead of silently drifting back into the track again.
+local HUB_RADIUS_SAFETY_MARGIN = 40
+local HUB_RADIUS = TrackGeometry.CurveRadius - TrackGeometry.SegmentWidth / 2 - HUB_RADIUS_SAFETY_MARGIN
 local HUB_FLOOR_THICKNESS = 4
 local HUB_FLOOR_COLOR = Color3.fromRGB(90, 200, 120)
 local SPAWN_PAD_SIZE = Vector3.new(12, 1, 12)
@@ -63,6 +77,19 @@ function HubGenerator.GetHubCFrame() : CFrame?
 	return cachedHubCFrame
 end
 
+-- Guarantees the Hub's own SpawnLocation is unambiguously where players
+-- land — disables (not destroys, in case it's something the user placed
+-- intentionally) any other SpawnLocation in Workspace. Without this, a
+-- leftover default-template SpawnLocation could compete with ours and win,
+-- which would put players on/near the track instead of the Hub.
+local function disableOtherSpawnLocations(oursSpawn: SpawnLocation)
+	for _, descendant in workspace:GetDescendants() do
+		if descendant:IsA("SpawnLocation") and descendant ~= oursSpawn then
+			descendant.Enabled = false
+		end
+	end
+end
+
 function HubGenerator.GenerateHub(parent: Instance) : Model
 	local hubCFrame = computeHubCFrame()
 	cachedHubCFrame = hubCFrame
@@ -91,6 +118,8 @@ function HubGenerator.GenerateHub(parent: Instance) : Model
 
 	hubModel.PrimaryPart = spawnPad
 	hubModel.Parent = parent
+
+	disableOtherSpawnLocations(spawnPad)
 
 	return hubModel
 end

@@ -9,6 +9,11 @@
 
 	Casting is gated on PlayerState == InRace: skills can only be cast
 	while on track.
+
+	CastSkillDirect is the test-cast entry point for a carried SkillPickup
+	(CarryItemService.ReleaseTrackItem) — Level 1 stats, no ownership/
+	cooldown check (the single-carry-slot + pickup travel time is the
+	limiting factor for test casts, not the skill's own cooldown).
 ]]
 
 local Players = game:GetService("Players")
@@ -56,6 +61,46 @@ local function findNearestTarget(caster: Player, casterRootPart: BasePart, range
 	return nearestPlayer
 end
 
+-- Shared by tryCast (owned skill, real level, cooldown-gated) and
+-- CastSkillDirect (test cast, Level 1, no cooldown).
+local function resolveAndApply(caster: Player, skillId: string, skillDefinition: SkillTrees.SkillDefinition, levelData: SkillTrees.SkillLevelData, atPeakLevel: boolean)
+	local character = caster.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if rootPart == nil then
+		return
+	end
+
+	local target = findNearestTarget(caster, rootPart, levelData.RangeStuds)
+	if target == nil then
+		return
+	end
+
+	if skillId == "PositionSwap" then
+		local targetCharacter = target.Character
+		local targetRootPart = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if targetRootPart == nil then
+			return
+		end
+		local casterCFrame, targetCFrame = rootPart.CFrame, targetRootPart.CFrame
+		rootPart.CFrame = targetCFrame
+		targetRootPart.CFrame = casterCFrame
+	elseif skillDefinition.DispelMode == "Offensive" then
+		EffectStackManager.Dispel("Offensive", levelData.DispelCount or 1, caster, target)
+	elseif skillDefinition.LinkedEffectId ~= nil then
+		EffectStackManager.TryApplyEffect(
+			target,
+			skillDefinition.LinkedEffectId,
+			"Target",
+			levelData.EffectMagnitude,
+			levelData.EffectDurationSeconds,
+			atPeakLevel
+		)
+	end
+
+	-- Target skills notify whoever the effect actually landed on, not the caster.
+	Network.Track.ShowNotification:FireClient(target, skillDefinition.ActivationNoticeText)
+end
+
 local function tryCast(caster: Player, skillId: string)
 	local skillDefinition = SkillTrees[skillId]
 	if skillDefinition == nil or skillDefinition.CastType ~= "Target" then
@@ -85,39 +130,28 @@ local function tryCast(caster: Player, skillId: string)
 		return
 	end
 
-	local character = caster.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if rootPart == nil then
+	-- Fired as soon as the cooldown is consumed (even if no target is found
+	-- below) so the client's cooldown visual always matches server truth.
+	Network.Combat.SkillCastResult:FireClient(caster, skillId, levelData.CooldownSeconds)
+
+	local atPeakLevel = skillData.Level >= skillDefinition.MaxLevel
+	resolveAndApply(caster, skillId, skillDefinition, levelData, atPeakLevel)
+end
+
+-- Test-cast entry point for a carried SkillPickup — bypasses ownership and
+-- cooldown, always uses Level 1 stats.
+function TargetedSkillManager.CastSkillDirect(caster: Player, skillId: string)
+	local skillDefinition = SkillTrees[skillId]
+	if skillDefinition == nil or skillDefinition.CastType ~= "Target" then
 		return
 	end
 
-	local target = findNearestTarget(caster, rootPart, levelData.RangeStuds)
-	if target == nil then
+	local levelData = skillDefinition.Levels[1]
+	if levelData == nil then
 		return
 	end
 
-	if skillId == "PositionSwap" then
-		local targetCharacter = target.Character
-		local targetRootPart = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if targetRootPart == nil then
-			return
-		end
-		local casterCFrame, targetCFrame = rootPart.CFrame, targetRootPart.CFrame
-		rootPart.CFrame = targetCFrame
-		targetRootPart.CFrame = casterCFrame
-	elseif skillDefinition.DispelMode == "Offensive" then
-		EffectStackManager.Dispel("Offensive", levelData.DispelCount or 1, caster, target)
-	elseif skillDefinition.LinkedEffectId ~= nil then
-		local atPeakLevel = skillData.Level >= skillDefinition.MaxLevel
-		EffectStackManager.TryApplyEffect(
-			target,
-			skillDefinition.LinkedEffectId,
-			"Target",
-			levelData.EffectMagnitude,
-			levelData.EffectDurationSeconds,
-			atPeakLevel
-		)
-	end
+	resolveAndApply(caster, skillId, skillDefinition, levelData, false)
 end
 
 function TargetedSkillManager.Init()

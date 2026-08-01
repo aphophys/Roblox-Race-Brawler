@@ -1,91 +1,111 @@
 --!strict
 --[[
 	TrackThemes
-	Catalog of the requested hazard/biome variants beyond the core oval.
-	This is a PLANNING artifact — schema + design data are real and locked,
-	but no geometry exists yet (see ThemedTrackBuilder, which is a stub).
-	Each theme is scoped to layer onto the same piece-chaining approach as
-	the core oval (TrackPieceBuilder) rather than being hand-placed, since
-	there's no Toolbox/marketplace access to place hand-built models with.
-]]
+	8 lightweight visual/material reskins for the oval track's Straight and
+	Curve pieces — NOT the original 7-entry hazard-biome catalog this file
+	used to hold (bespoke floating-platform/maze/tsunami geometry that
+	didn't fit inside the existing piece-chaining oval at all, and was
+	never built). Superseded per direct instruction to go back to building
+	on the single oval track: every theme here works through the SAME
+	TrackPieceBuilder.BuildStraight/BuildCurve contract as the plain
+	default look — only RoadColor/RoadMaterial/BarrierColor change — so any
+	theme can be dropped onto any segment of the oval with no special-case
+	geometry. TrackGenerator picks 2-4 of these at random per generation
+	and spreads them across the oval's 4 straight/curve pairs (see its
+	docstring).
 
-export type MovementStat = "WalkSpeed" | "ClimbSpeed" | "SwimSpeed"
+	WalkSpeedModifier is real config data but NOT wired to live gameplay
+	yet — there's no terrain-zone spatial-query system reading it (that
+	would be a real, separate feature: detect which theme's road segment a
+	player is standing on and apply the multiplier via MovementModifier).
+	Flagged here rather than silently ignored so it's clear this is a
+	planned hook, not a bug.
+]]
 
 export type TrackTheme = {
 	Id: string,
 	DisplayName: string,
-	DifficultyTier: number, -- 1 (easiest) .. 5 (hardest)
-	HazardTags: { string },
-	AmbientStatModifiers: { [string]: number }, -- MovementStat -> multiplier while standing in themed terrain
-	FallIsLethal: boolean, -- true: falling off costs a life immediately (GrandPrixManager.HandleRacerDown), not just a knockback
-	BuildNotes: string, -- what TrackGenerator/ThemedTrackBuilder still needs to do
+	RoadColor: Color3,
+	RoadMaterial: Enum.Material,
+	BarrierColor: Color3,
+	WalkSpeedModifier: number, -- ambient multiplier while standing on this theme's road; see module docstring
+	HazardTag: string, -- flavor identifier, for future theme-specific hazard behavior
 }
 
 export type TrackThemesType = { [string]: TrackTheme }
 
 local TrackThemes: TrackThemesType = {
+	Classic = {
+		Id = "Classic",
+		DisplayName = "Classic Oval",
+		RoadColor = Color3.fromRGB(70, 70, 78),
+		RoadMaterial = Enum.Material.Concrete,
+		BarrierColor = Color3.fromRGB(150, 40, 40),
+		WalkSpeedModifier = 1.0,
+		HazardTag = "None",
+	},
 	HillMud = {
 		Id = "HillMud",
 		DisplayName = "Hill & Mud",
-		DifficultyTier = 2,
-		HazardTags = { "Mud", "Incline" },
-		AmbientStatModifiers = { WalkSpeed = 0.6 },
-		FallIsLethal = false,
-		BuildNotes = "Sloped Straight pieces (tilt the road slab) + a mud material zone that applies AmbientStatModifiers on entry/exit (spatial query, not .Touched).",
+		RoadColor = Color3.fromRGB(92, 64, 38),
+		RoadMaterial = Enum.Material.Mud,
+		BarrierColor = Color3.fromRGB(64, 46, 30),
+		WalkSpeedModifier = 0.85,
+		HazardTag = "Mud",
 	},
-	DeathPitFloating = {
-		Id = "DeathPitFloating",
-		DisplayName = "Death Pit (Floating Blocks)",
-		DifficultyTier = 4,
-		HazardTags = { "FloatingPlatforms", "Pit", "Timing" },
-		AmbientStatModifiers = {},
-		FallIsLethal = true,
-		BuildNotes = "No road slab — replace with a chain of small floating platforms (some moving via TweenService loops) over a bottomless pit; missing a jump = fall = lethal.",
+	IceFrost = {
+		Id = "IceFrost",
+		DisplayName = "Ice & Frost",
+		RoadColor = Color3.fromRGB(196, 226, 240),
+		RoadMaterial = Enum.Material.Ice,
+		BarrierColor = Color3.fromRGB(120, 170, 200),
+		WalkSpeedModifier = 1.1,
+		HazardTag = "Slippery",
 	},
-	HighTracks = {
-		Id = "HighTracks",
-		DisplayName = "High Tracks",
-		DifficultyTier = 4,
-		HazardTags = { "Height", "NarrowPath" },
-		AmbientStatModifiers = {},
-		FallIsLethal = true,
-		BuildNotes = "Same Straight/Curve pieces as the core oval but elevated well above baseplate and narrowed (reduce TrackGeometry.SegmentWidth for this theme specifically); no safety net below.",
+	Volcanic = {
+		Id = "Volcanic",
+		DisplayName = "Volcanic Ridge",
+		RoadColor = Color3.fromRGB(120, 45, 20),
+		RoadMaterial = Enum.Material.CrackedLava,
+		BarrierColor = Color3.fromRGB(60, 30, 20),
+		WalkSpeedModifier = 0.9,
+		HazardTag = "Heat",
 	},
-	WaterIsland = {
-		Id = "WaterIsland",
-		DisplayName = "Water & Islands",
-		DifficultyTier = 3,
-		HazardTags = { "Water", "Swimming", "Islands" },
-		AmbientStatModifiers = { SwimSpeed = 1.0, WalkSpeed = 0.9 },
-		FallIsLethal = false,
-		BuildNotes = "Terrain water region connecting small island platforms (road-slab islands); relies on MovementModifier reading SwimSpeed while Humanoid.FloorMaterial/state indicates swimming.",
+	WaterDock = {
+		Id = "WaterDock",
+		DisplayName = "Water & Docks",
+		RoadColor = Color3.fromRGB(150, 110, 70),
+		RoadMaterial = Enum.Material.WoodPlanks,
+		BarrierColor = Color3.fromRGB(70, 140, 160),
+		WalkSpeedModifier = 0.9,
+		HazardTag = "Slippery",
 	},
-	Tsunami = {
-		Id = "Tsunami",
-		DisplayName = "Tsunami",
-		DifficultyTier = 5,
-		HazardTags = { "Water", "MovingHazard", "Timing" },
-		AmbientStatModifiers = { SwimSpeed = 0.8 },
-		FallIsLethal = false,
-		BuildNotes = "Periodic wave hazard: a moving wall of Terrain water (or a fast-moving invisible push-volume) that sweeps the track on a timer and displaces racers; needs its own timer loop, not built yet.",
+	SkyRail = {
+		Id = "SkyRail",
+		DisplayName = "Sky Rail",
+		RoadColor = Color3.fromRGB(210, 210, 218),
+		RoadMaterial = Enum.Material.Metal,
+		BarrierColor = Color3.fromRGB(120, 120, 130),
+		WalkSpeedModifier = 1.0,
+		HazardTag = "Height",
 	},
-	EasyMaze = {
-		Id = "EasyMaze",
-		DisplayName = "Easy Maze",
-		DifficultyTier = 1,
-		HazardTags = { "Maze", "NoTimer" },
-		AmbientStatModifiers = {},
-		FallIsLethal = false,
-		BuildNotes = "Grid of low walls forming a branching path back to the main oval; no fall risk, intended as a breather/exploration segment rather than a hazard.",
+	Desert = {
+		Id = "Desert",
+		DisplayName = "Desert Dunes",
+		RoadColor = Color3.fromRGB(214, 186, 130),
+		RoadMaterial = Enum.Material.Sand,
+		BarrierColor = Color3.fromRGB(150, 120, 80),
+		WalkSpeedModifier = 0.8,
+		HazardTag = "Heat",
 	},
-	ClimbSlide = {
-		Id = "ClimbSlide",
-		DisplayName = "Climb & Slide",
-		DifficultyTier = 3,
-		HazardTags = { "Climbing", "Sliding" },
-		AmbientStatModifiers = { ClimbSpeed = 0.8 },
-		FallIsLethal = false,
-		BuildNotes = "Vertical TrussPart or ladder-tagged climb section up, then a frictionless slide (low-friction Part ramp) back down; ClimbSpeed modifier applies only while Humanoid:GetState() == Climbing.",
+	NeonCircuit = {
+		Id = "NeonCircuit",
+		DisplayName = "Neon Circuit",
+		RoadColor = Color3.fromRGB(120, 40, 200),
+		RoadMaterial = Enum.Material.Neon,
+		BarrierColor = Color3.fromRGB(255, 0, 200),
+		WalkSpeedModifier = 1.05,
+		HazardTag = "FastLane",
 	},
 }
 

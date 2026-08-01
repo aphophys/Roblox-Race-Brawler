@@ -187,6 +187,26 @@ function EffectStackManager.IsControlsScrambled(player: Player) : SkillEffects.C
 	return nil
 end
 
+-- True if any currently-active effect on `player` has IsStun set (today,
+-- only ShockTarget). CarryItemService polls this to drop a carried Fan
+-- Payload the moment a stun lands.
+function EffectStackManager.IsStunned(player: Player) : boolean
+	purgeExpired(player)
+	local list = activeEffectsByPlayer[player]
+	if list == nil then
+		return false
+	end
+
+	for _, instance in list do
+		local definition = SkillEffects.Catalog[instance.EffectId]
+		if definition ~= nil and definition.IsStun then
+			return true
+		end
+	end
+
+	return false
+end
+
 -- mode == "Defensive": strips up to `count` of `player`'s own Bad effects.
 -- mode == "Offensive": strips up to `count` of `targetPlayer`'s Good effects
 -- (targetPlayer required in that case).
