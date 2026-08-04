@@ -35,6 +35,7 @@ local MAXED_COLOR = Color3.fromRGB(150, 150, 150)
 local SkillShopController = {}
 
 type EntryRefs = {
+	Icon: ImageLabel,
 	NameLabel: TextLabel,
 	LevelLabel: TextLabel,
 	UpgradeButton: TextButton,
@@ -70,6 +71,7 @@ local function renderEntry(skillId: string)
 	-- pay UnlockGoldCost to reach.
 	local level = (localPlayer:GetAttribute(`SkillLevel_{skillId}`) :: number?) or 0
 	refs.NameLabel.Text = skillDefinition.DisplayName
+	refs.Icon.Image = skillDefinition.IconAssetId
 
 	if level >= skillDefinition.MaxLevel then
 		refs.LevelLabel.Text = `Level {level} / {skillDefinition.MaxLevel} (MAX)`
@@ -94,13 +96,19 @@ local function renderEntry(skillId: string)
 	local canAfford = gold >= price
 
 	refs.LevelLabel.Text = `Level {level} / {skillDefinition.MaxLevel}`
-	refs.UpgradeButton.Text = `🪙 {Utils.FormatNumber(price)}`
+	refs.UpgradeButton.Text = `💰 {Utils.FormatNumber(price)}`
 	refs.UpgradeButton.BackgroundColor3 = if canAfford then AFFORDABLE_COLOR else UNAFFORDABLE_COLOR
 	refs.UpgradeButton.AutoButtonColor = true
 end
 
 local function refreshAllEntries()
-	if not isOpen then
+	-- Reads the panel itself rather than the `isOpen` flag. PanelExclusivity
+	-- Controller can close this panel without going through Close(), which
+	-- leaves the flag stale at true — harmless for correctness (the buttons
+	-- call Open/Close directly, so there is no toggle to desync) but it would
+	-- make every Gold change re-render a list nobody is looking at.
+	local panel = getPanel()
+	if panel == nil or not panel.Visible then
 		return
 	end
 	for skillId in entriesBySkillId do
@@ -145,11 +153,13 @@ local function rebuildList()
 		entry.Visible = true
 		entry.Parent = skillList
 
+		local icon = entry:WaitForChild("Icon") :: ImageLabel
 		local nameLabel = entry:WaitForChild("NameLabel") :: TextLabel
 		local levelLabel = entry:WaitForChild("LevelLabel") :: TextLabel
 		local upgradeButton = entry:WaitForChild("UpgradeButton") :: TextButton
 
 		entriesBySkillId[skillId] = {
+			Icon = icon,
 			NameLabel = nameLabel,
 			LevelLabel = levelLabel,
 			UpgradeButton = upgradeButton,

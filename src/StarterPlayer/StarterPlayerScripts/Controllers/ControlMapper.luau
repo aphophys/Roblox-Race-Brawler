@@ -91,11 +91,6 @@ local function handleAction(actionName: string, inputState: Enum.UserInputState)
 	return Enum.ContextActionResult.Pass
 end
 
--- IconAssetId is a placeholder ("") on every skill today (no Toolbox
--- access to source icons) — always falls back to DisplayName text. Once a
--- skill has a real IconAssetId, this is the one place to branch over to
--- setting an Image on the button instead (no ImageLabel exists on these
--- buttons yet since there's nothing to display there today).
 local function skillButtonLabel(skillId: string?) : string
 	if skillId == nil or skillId == "" then
 		return "-"
@@ -107,6 +102,35 @@ local function skillButtonLabel(skillId: string?) : string
 	end
 
 	return skillDefinition.DisplayName
+end
+
+-- Shows the skill's IconAssetId image when set, hiding the number/name
+-- text underneath it; falls back to text-only (icon hidden) when the
+-- equipped skill has no icon yet — same convention as ShopUIController/
+-- MainMenuController/SkillShopController's applyIconFallback. Also hides
+-- the button's own BackgroundColor3 while an icon is showing rather than
+-- leaving a colored capsule behind/around it — the button is a true square
+-- (UIAspectRatioConstraint) so the icon itself doesn't need a background to
+-- read clearly against.
+local function applyIconFallback(textButton: TextButton, skillId: string?)
+	local icon = textButton:FindFirstChild("Icon") :: ImageLabel?
+	if icon == nil then
+		return
+	end
+
+	local skillDefinition = skillId ~= nil and skillId ~= "" and SkillTrees[skillId] or nil
+	local iconAssetId = skillDefinition ~= nil and skillDefinition.IconAssetId or ""
+
+	icon.Image = iconAssetId
+	if iconAssetId ~= "" then
+		icon.Visible = true
+		textButton.TextTransparency = 1
+		textButton.BackgroundTransparency = 1
+	else
+		icon.Visible = false
+		textButton.TextTransparency = 0
+		textButton.BackgroundTransparency = 0
+	end
 end
 
 local function refreshSkillButtonLabels()
@@ -123,6 +147,7 @@ local function refreshSkillButtonLabels()
 			local skillId = localPlayer:GetAttribute(`EquippedSkill{slotIndex}`) :: string?
 			local textButton = button :: TextButton
 			textButton.Text = skillButtonLabel(skillId)
+			applyIconFallback(textButton, skillId)
 		end
 	end
 end

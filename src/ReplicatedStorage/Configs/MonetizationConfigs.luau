@@ -21,7 +21,7 @@
 export type DeveloperProductEntry = {
 	Id: number,
 	Name: string,
-	GrantCurrency: "Gold" | "TotalFans",
+	GrantCurrency: "Gold" | "TotalFans" | "ExtraLife",
 	GrantAmount: number,
 }
 
@@ -37,9 +37,11 @@ export type MonetizationConfigsType = {
 		GoldMedium: DeveloperProductEntry,
 		GoldLarge: DeveloperProductEntry,
 		FanBoost: DeveloperProductEntry,
+		ExtraLife: DeveloperProductEntry,
 	},
 	GamePasses: {
 		DoubleFans: GamePassEntry,
+		DailyBonus: GamePassEntry,
 	},
 }
 
@@ -53,10 +55,27 @@ local MonetizationConfigs: MonetizationConfigsType = {
 		GoldLarge = { Id = 3612671461, Name = "GoldLarge", GrantCurrency = "Gold", GrantAmount = 1200 },
 		-- 250 Fans — 300 Robux
 		FanBoost = { Id = 3612671585, Name = "FanBoost", GrantCurrency = "TotalFans", GrantAmount = 250 },
+		-- 1 extra life on elimination — 30 Robux. Not sold from the general
+		-- Robux Shop panel (ShopUIController's DEVELOPER_PRODUCT_BUTTONS
+		-- deliberately excludes it) — only offered from the elimination
+		-- revive prompt (EliminationPromptController), since it's
+		-- meaningless outside that moment.
+		ExtraLife = { Id = 3612751507, Name = "ExtraLife", GrantCurrency = "ExtraLife", GrantAmount = 1 },
 	},
 	GamePasses = {
-		-- "Rocket Fans and Gold" — 500 Robux, doubles Fan Payload deposit value while owned.
-		DoubleFans = { Id = 1933401103, Name = "Rocket Fans and Gold", Description = "Doubles Fan Payload deposit value while owned." },
+		-- 500 Robux — doubles every Gold/Fans reward (fan deposit, lap
+		-- completion) while owned; see EconomyRates.DoubleGainMultiplier
+		-- and MonetizationService.PlayerOwnsGamePass for where it's applied.
+		DoubleFans = { Id = 1933401103, Name = "Double Gain Fans and Gold", Description = "Doubles every Gold and Fans reward you earn while owned." },
+		-- Pays EconomyRates.DailyPassFanReward / DailyPassGoldReward once per
+		-- calendar day to anyone who owns it — see DailyPassRewardService.
+		--
+		-- Deliberately absent from the Robux Shop UI (ShopUIController's
+		-- GAME_PASS_BUTTONS), because it is not sold in-experience. Being in
+		-- this config is what makes it WORK, not what puts it on sale; the two
+		-- are separate on purpose, exactly as ExtraLife is configured here but
+		-- sold only from the elimination prompt.
+		DailyBonus = { Id = 1932605475, Name = "Daily Bonus", Description = "Collect Gold and Fans every day, just for owning it." },
 	},
 }
 

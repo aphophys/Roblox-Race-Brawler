@@ -107,7 +107,11 @@ export type EffectStackingRulesType = {
 local StackingRules: EffectStackingRulesType = {
 	MaxStackedPerPolarity = 3,
 	MaxStackedPerPolarityAtPeakLevel = 5,
-	ImmunityDurationSeconds = 5,
+	-- Doubled 5 -> 10 with SkillTrees.DURATION_MULTIPLIER. It is the fallback
+	-- duration for the cap+1 immunity window (EffectStackManager), i.e. a
+	-- skill-driven duration like every other one, so leaving it behind would
+	-- have quietly halved immunity relative to the effects it protects against.
+	ImmunityDurationSeconds = 10,
 	MaxConcurrentBySource = { Global = 1, Target = 2, Self = 2 },
 	DispelMinCount = 1,
 	DispelMaxCount = 3,

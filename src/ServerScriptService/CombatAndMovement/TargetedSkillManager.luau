@@ -28,6 +28,20 @@ local EffectStackManager = require(script.Parent:WaitForChild("EffectStackManage
 local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
 
 local ProfileManager = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("ProfileManager"))
+local SoundDirector = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("SoundDirector"))
+local VisualEffectsService = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("VisualEffectsService"))
+
+-- Matches the requested ~0.5s purple lightning flash on PositionSwap.
+local SWAP_ARC_SECONDS = 0.5
+local SWAP_ARC_COLOR = Color3.fromRGB(190, 90, 255)
+-- Wind-up before a Target cast resolves. This is a deliberate, requested
+-- gameplay change ("maybe adding 0.5 second cast time before swap, or an
+-- actual lightning or magical energy ball ... to arrive the player") and the
+-- only one in this round: a cast now has a visible charge, a bolt that
+-- travels, and lands when the bolt does, instead of resolving the instant the
+-- button is pressed. The cooldown is still consumed up front, so the wind-up
+-- can't be used to hold a cast open.
+local CAST_WINDUP_SECONDS = 0.5
 
 local TargetedSkillManager = {}
 
@@ -75,18 +89,75 @@ local function resolveAndApply(caster: Player, skillId: string, skillDefinition:
 		return
 	end
 
+	-- Cast sound and burst live HERE, in the shared resolve, rather than in
+	-- tryCast. They used to sit in tryCast, so CastSkillDirect — the "release
+	-- a carried skill pickup" path — produced neither, and a pickup cast was
+	-- almost completely silent. GlobalSkillStateMachine never had this problem
+	-- precisely because its sound/VFX were already in its shared `activate`.
+	SoundDirector.PlayAtCharacter(caster, if skillId == "PositionSwap" then "SkillSwap" else "SkillTarget")
+	if caster.Character ~= nil then
+		VisualEffectsService.ShowCastBurst(caster.Character, VisualEffectsService.DebuffColor)
+		VisualEffectsService.ShowChargeUp(caster.Character, VisualEffectsService.DebuffColor, CAST_WINDUP_SECONDS)
+	end
+	SoundDirector.PlayAtCharacter(caster, "CastCharge")
+
+	-- Wind-up, then a real projectile that flies to the target and lands
+	-- before anything is applied. Both halves are what the effect actually
+	-- being cast looks like, so the effect must wait for them: a debuff that
+	-- lands before its own bolt arrives would make the bolt decorative.
+	task.wait(CAST_WINDUP_SECONDS)
+
+	-- Everything has to be re-read after the wait — half a second is plenty
+	-- of time for either character to be respawned, or for the target to
+	-- leave. Nothing below may assume the pre-wait state still holds.
+	local casterRootPart = caster.Character and caster.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local targetRootPartNow = target.Character and target.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if casterRootPart == nil or targetRootPartNow == nil then
+		return
+	end
+
+	local travelSeconds = VisualEffectsService.ShowCastProjectile(
+		casterRootPart,
+		targetRootPartNow,
+		if skillId == "PositionSwap" then SWAP_ARC_COLOR else VisualEffectsService.DebuffColor
+	)
+	task.wait(travelSeconds)
+
+	if target.Parent == nil then
+		return
+	end
+	SoundDirector.PlayAtCharacter(target, "ProjectileHit")
+
+	-- Re-resolved a second time for the same reason as above: the projectile's
+	-- own flight is another window in which a character can be replaced.
+	rootPart = caster.Character and caster.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if rootPart == nil then
+		return
+	end
+
 	if skillId == "PositionSwap" then
 		local targetCharacter = target.Character
 		local targetRootPart = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if targetRootPart == nil then
 			return
 		end
+		-- Arc drawn BEFORE the swap, between where the two actually are, so
+		-- it visibly connects the pair being exchanged rather than snapping
+		-- to their post-swap positions.
+		VisualEffectsService.ShowSwapArc(rootPart, targetRootPart, SWAP_ARC_SECONDS)
 		local casterCFrame, targetCFrame = rootPart.CFrame, targetRootPart.CFrame
 		rootPart.CFrame = targetCFrame
 		targetRootPart.CFrame = casterCFrame
 	elseif skillDefinition.DispelMode == "Offensive" then
 		EffectStackManager.Dispel("Offensive", levelData.DispelCount or 1, caster, target)
 	elseif skillDefinition.LinkedEffectId ~= nil then
+		-- Every control-scramble mode (Blind / Invert / Randomize) is told to
+		-- the affected client by EffectStackManager.TryApplyEffect itself, at
+		-- the point the effect is accepted — see Network.Combat.
+		-- ApplyControlEffect. This used to be a Blind-only special case right
+		-- here, which is precisely why ScrambleGlobal, cast through
+		-- GlobalSkillStateMachine rather than this manager, never reached any
+		-- client.
 		EffectStackManager.TryApplyEffect(
 			target,
 			skillDefinition.LinkedEffectId,
@@ -97,8 +168,33 @@ local function resolveAndApply(caster: Player, skillId: string, skillDefinition:
 		)
 	end
 
-	-- Target skills notify whoever the effect actually landed on, not the caster.
-	Network.Track.ShowNotification:FireClient(target, skillDefinition.ActivationNoticeText)
+	-- ATTRIBUTION — both halves of "who cast what on whom".
+	--
+	-- The victim used to be told only WHAT had landed ("BLINDED!"), with no way
+	-- to know who did it, and the caster was told nothing at all beyond the
+	-- cooldown starting — so a hit that connected and a hit that fizzled looked
+	-- identical from the casting end. Both are now named events.
+	--
+	-- Deliberately sent to the two players INVOLVED and to nobody else, unlike
+	-- the server-wide global announcement. Target cooldowns run 8-20s, so a
+	-- full 40-player server casting on cooldown would produce roughly three of
+	-- these per second; broadcast, that is not a rivalry, it is a wall of text
+	-- that would bury the checkpoint and reward notices sharing the same toast
+	-- stack.
+	local skillName = string.upper(skillDefinition.DisplayName)
+	Network.Track.ShowNotification:FireClient(
+		target,
+		`{skillDefinition.ActivationNoticeText} — {caster.DisplayName} CAST {skillName} ON YOU`
+	)
+	-- Dead branch today, kept as a guard rather than an assumption: EVERY route
+	-- into this function (tryCast and CastSkillDirect both) resolves its target
+	-- through findNearestTarget, which skips the caster — so caster and target
+	-- cannot currently be the same player. That invariant lives in one function
+	-- far from here, and the failure it would cause if it ever changed is the
+	-- caster being told twice about a cast they aimed at themselves.
+	if target ~= caster then
+		Network.Track.ShowNotification:FireClient(caster, `🎯 YOU CAST {skillName} ON {target.DisplayName}`)
+	end
 end
 
 local function tryCast(caster: Player, skillId: string)
@@ -126,12 +222,31 @@ local function tryCast(caster: Player, skillId: string)
 		return
 	end
 
+	-- Target check BEFORE the cooldown is consumed. Previously the cooldown
+	-- was burned first and resolveAndApply then silently returned when
+	-- findNearestTarget came back nil — so casting with nobody in range cost
+	-- the player the whole cooldown, did nothing, and told them nothing. A
+	-- Target-cast skill with no target isn't a failed cast, it's a cast that
+	-- must not happen.
+	local character = caster.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if rootPart == nil then
+		return
+	end
+
+	if findNearestTarget(caster, rootPart, levelData.RangeStuds) == nil then
+		Network.Track.ShowNotification:FireClient(caster, "NO TARGET IN RANGE!")
+		SoundDirector.PlayForPlayer(caster, "SkillBlocked")
+		return
+	end
+
 	if not CooldownTracker.TryConsume(caster, skillId, levelData.CooldownSeconds) then
 		return
 	end
 
-	-- Fired as soon as the cooldown is consumed (even if no target is found
-	-- below) so the client's cooldown visual always matches server truth.
+	-- Fired as soon as the cooldown is consumed so the client's cooldown
+	-- visual always matches server truth. The cast's own sound and VFX are
+	-- NOT here — they moved into resolveAndApply, which CastSkillDirect shares.
 	Network.Combat.SkillCastResult:FireClient(caster, skillId, levelData.CooldownSeconds)
 
 	local atPeakLevel = skillData.Level >= skillDefinition.MaxLevel

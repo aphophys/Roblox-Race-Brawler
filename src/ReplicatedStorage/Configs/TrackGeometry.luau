@@ -38,7 +38,13 @@ local TrackGeometry: TrackGeometryType = {
 	BarrierHeight = 10,
 	BarrierThickness = 3,
 	CheckpointTriggerThickness = 6,
-	HazardBarLength = 60,
+	-- Must stay <= SegmentWidth - 2 (ThemeHazardBuilder asserts this). Was 60
+	-- against a 72-stud road: a bar spinning about the road's centreline swept
+	-- a circle of radius 30, which left a 6-stud lane against each barrier that
+	-- the bar could never reach — so the signature Classic hazard was avoided
+	-- for free by anyone who simply ran along the wall. 70 sweeps to within a
+	-- stud of each barrier, which no character fits through.
+	HazardBarLength = 70,
 	HazardSpinDegreesPerSecond = 120, -- rotational speed, not spatial — unchanged by the scale-up
 }
 

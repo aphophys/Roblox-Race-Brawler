@@ -82,8 +82,9 @@ local GAME_PASS_BUTTONS = { "DoubleFans" }
 
 local function labelForProduct(productKey: string) : string
 	local product = MonetizationConfigs.DeveloperProducts[productKey]
-	local currencyEmoji = if product.GrantCurrency == "Gold" then "🪙" else "🌟"
-	return `{currencyEmoji} {Utils.FormatNumber(product.GrantAmount)} {product.GrantCurrency}`
+	local currencyEmoji = if product.GrantCurrency == "Gold" then "💰" else "🌟" -- 🪙 has no glyph in Roblox's default fonts, renders as an empty box
+	local currencyLabel = if product.GrantCurrency == "Gold" then "Gold" else "Fans" -- "TotalFans" is the internal field name, not a display label
+	return `{currencyEmoji} {Utils.FormatNumber(product.GrantAmount)} {currencyLabel}`
 end
 
 local function wireProductList(panel: Frame)
@@ -96,7 +97,10 @@ local function wireProductList(panel: Frame)
 	for _, productKey in DEVELOPER_PRODUCT_BUTTONS do
 		local button = productList:FindFirstChild(`{productKey}Button`) :: TextButton?
 		if button ~= nil then
-			button.Text = labelForProduct(productKey)
+			local label = button:FindFirstChild("Label") :: TextLabel?
+			if label ~= nil then
+				label.Text = labelForProduct(productKey)
+			end
 			button.Activated:Connect(function()
 				ShopUIController.PromptRobuxProduct(productKey)
 			end)
@@ -107,7 +111,10 @@ local function wireProductList(panel: Frame)
 		local button = productList:FindFirstChild(`{passKey}Button`) :: TextButton?
 		if button ~= nil then
 			local pass = MonetizationConfigs.GamePasses[passKey]
-			button.Text = `{pass.Name} — {pass.Description}`
+			local label = button:FindFirstChild("Label") :: TextLabel?
+			if label ~= nil then
+				label.Text = pass.Name
+			end
 			button.Activated:Connect(function()
 				ShopUIController.PromptGamePassPurchase(passKey)
 			end)

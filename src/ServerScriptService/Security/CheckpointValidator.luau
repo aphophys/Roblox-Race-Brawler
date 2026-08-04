@@ -68,8 +68,14 @@ local Network = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("
 local Utils = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Utils"))
 
 local ProfileManager = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("ProfileManager"))
+-- Safe direction: QuestService requires ProfileManager but never
+-- CheckpointValidator, so this is not a cycle.
+local QuestService = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("QuestService"))
 local PlayerStateService = require(script.Parent.Parent:WaitForChild("CombatAndMovement"):WaitForChild("PlayerStateService"))
 local PlayerState = require(ReplicatedStorage:WaitForChild("Enums"):WaitForChild("PlayerState"))
+local MonetizationService = require(script.Parent.Parent:WaitForChild("Monetization"):WaitForChild("MonetizationService"))
+local SoundDirector = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("SoundDirector"))
+local VisualEffectsService = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("VisualEffectsService"))
 
 local CHECK_INTERVAL_SECONDS = 0.5
 local CHECKPOINT_COUNT = 8
@@ -86,6 +92,37 @@ local CheckpointValidator = {}
 local checkpointParts: { [number]: BasePart } = {}
 local lastOrdinalByPlayer: { [Player]: number } = {} -- 0 = none passed yet this attempt
 local lastPositionByPlayer: { [Player]: Vector3 } = {}
+
+-- os.clock() when the player last crossed checkpoint 1, i.e. when their
+-- current lap started. nil = no lap is being timed.
+--
+-- Timing starts at checkpoint 1 rather than at track entry on purpose: entry
+-- drops a player at the start line, but they might stand there, get
+-- teleported by a Grand Prix start, or join mid-lap. Checkpoint 1 is the only
+-- moment we know a lap genuinely began, and checkpoint 8 is the only moment we
+-- know one genuinely ended, so the interval between them is the only honest
+-- lap time available.
+--
+-- Cleared (not just ignored) whenever a lap can no longer be trusted — a
+-- respawn or a track exit resets progress to ordinal 0, so the next
+-- checkpoint 1 starts a fresh clock.
+local lapStartClockByPlayer: { [Player]: number } = {}
+
+-- Optional observer for "this player just completed a lap." GrandPrixManager
+-- registers one so it can count laps toward its 2-lap finish condition.
+--
+-- Deliberately a registered callback rather than a require: GrandPrixManager
+-- already requires THIS module (for RefreshCheckpoints after a regeneration),
+-- so requiring it back would be a genuine cycle. A callback keeps the
+-- dependency one-directional and leaves this module usable with no race
+-- manager present at all (which is exactly the Arcade free-run case).
+local lapCompletedHandler: ((Player) -> ())? = nil
+
+-- Same pattern, but for EVERY checkpoint rather than only the lap-closing
+-- one. SegmentAnnouncer registers here to announce the segment a player is
+-- about to enter. Kept separate from lapCompletedHandler so a consumer can
+-- take one without the other.
+local checkpointReachedHandler: ((Player, number) -> ())? = nil
 
 local function cacheCheckpointParts()
 	checkpointParts = {}
@@ -104,6 +141,33 @@ local function cacheCheckpointParts()
 			end
 		end
 	end
+end
+
+-- Re-reads workspace.Track.Checkpoints — must be called after
+-- TrackGenerator.Regenerate(), which destroys the old Track folder
+-- (including every checkpoint trigger Part) and builds a brand new one.
+-- Without this, checkpointParts keeps holding references to destroyed
+-- instances forever: Destroy() only sets Parent = nil, it doesn't clear
+-- property reads, so a stale reference silently keeps "working" — this
+-- was a real, previously-undetected bug (checkpointParts was only ever
+-- populated once, in Init()) that a live Studio session can't easily
+-- surface since the oval's geometry is deterministic and stale positions
+-- happen to still line up; it's the reference going stale, not the
+-- geometry, that's the actual defect.
+function CheckpointValidator.RefreshCheckpoints()
+	cacheCheckpointParts()
+end
+
+-- See lapCompletedHandler above. Fires AFTER the lap's own Gold/Fan reward
+-- has been granted, once per completed lap, only for players actually InRace.
+function CheckpointValidator.SetLapCompletedHandler(handler: (Player) -> ())
+	lapCompletedHandler = handler
+end
+
+-- Fires with (player, ordinal) every time a checkpoint is legitimately
+-- passed, including the lap-closing one.
+function CheckpointValidator.SetCheckpointReachedHandler(handler: (Player, number) -> ())
+	checkpointReachedHandler = handler
 end
 
 -- Resets a player to "no checkpoint passed yet" — call when they freshly
@@ -175,26 +239,123 @@ local function crossedTriggerPlane(lastPosition: Vector3, currentPosition: Vecto
 	return math.abs(currentLocal.X) <= halfSize.X and math.abs(currentLocal.Y) <= halfSize.Y
 end
 
+-- Closes the timing window opened at checkpoint 1 and records a new personal
+-- best if this lap beat it. Returns the lap time in ms, or nil when this lap
+-- was not timeable (no checkpoint 1 this attempt — e.g. the player respawned
+-- mid-lap, which resets progress).
+local function recordLapTime(player: Player, profile) : number?
+	local startClock = lapStartClockByPlayer[player]
+	lapStartClockByPlayer[player] = nil
+	if startClock == nil then
+		return nil
+	end
+
+	local lapMs = math.floor((os.clock() - startClock) * 1000)
+	-- A sub-second "lap" is not a lap; it is a symptom (a teleport that
+	-- happened to trip both planes, or two checkpoints refreshed under the
+	-- player by a regeneration). Refusing it here keeps a nonsense record off
+	-- the fastest-lap board permanently, which is the one board where a
+	-- single bad row is unfixable from inside the game.
+	if lapMs < 1000 then
+		return nil
+	end
+
+	if profile.Data.BestLapTimeMs == 0 or lapMs < profile.Data.BestLapTimeMs then
+		profile.Data.BestLapTimeMs = lapMs
+		return lapMs
+	end
+	return lapMs
+end
+
+-- Paid for checkpoints 1-7 only; the 8th IS the lap and pays the lap reward
+-- instead, so no crossing is ever paid twice.
+--
+-- Reached only through checkPlayer's own geometric validation (a real
+-- in-trigger test or a real plane crossing, with teleports explicitly
+-- rejected), so there is no client input anywhere in this path — the client
+-- cannot ask for a checkpoint, only be observed passing one.
+local function grantCheckpointReward(player: Player)
+	local profile = ProfileManager.GetProfile(player)
+	if profile == nil then
+		return
+	end
+
+	local fanReward = EconomyRates.CheckpointFanReward
+	if MonetizationService.PlayerOwnsGamePass(player, "DoubleFans") then
+		fanReward *= EconomyRates.DoubleGainMultiplier
+	end
+
+	profile.Data.TotalFans += fanReward
+	ProfileManager.SyncAttributes(player)
+	Network.Track.ShowNotification:FireClient(player, `+{Utils.FormatNumber(fanReward)} 🌟`, "Pop")
+end
+
 local function grantLapReward(player: Player)
 	local profile = ProfileManager.GetProfile(player)
 	if profile == nil then
 		return
 	end
 
+	local goldReward = EconomyRates.LapCompletionGoldReward
+	local fanReward = EconomyRates.LapCompletionFanReward
+	if MonetizationService.PlayerOwnsGamePass(player, "DoubleFans") then
+		goldReward *= EconomyRates.DoubleGainMultiplier
+		fanReward *= EconomyRates.DoubleGainMultiplier
+	end
+
 	profile.Data.TotalLapsCompleted += 1
-	profile.Data.Gold += EconomyRates.LapCompletionGoldReward
-	profile.Data.TotalFans += EconomyRates.LapCompletionFanReward
+	-- The daily lap count is the same fact as the lifetime one with a
+	-- different lifetime, so it is recorded at the same moment rather than
+	-- inferred later from a separate poll that could drift.
+	QuestService.RecordLap(player)
+
+	local previousBestMs = profile.Data.BestLapTimeMs
+	local lapMs = recordLapTime(player, profile)
+	local isNewBest = lapMs ~= nil and profile.Data.BestLapTimeMs == lapMs and lapMs ~= previousBestMs
+
+	profile.Data.Gold += goldReward
+	profile.Data.TotalFans += fanReward
 	ProfileManager.SyncAttributes(player)
+	SoundDirector.PlayForPlayer(player, "GoldGain")
+	SoundDirector.PlayForPlayer(player, "FanGain")
+	if player.Character ~= nil then
+		VisualEffectsService.ShowLapBurst(player.Character)
+		-- Confetti ON TOP of the gold lap burst, not instead of it: the burst
+		-- is the information (which progress event fired, told by colour), the
+		-- confetti is the celebration. A lap is the biggest thing that happens
+		-- in a race lap-to-lap and should look like it.
+		local rootPart = player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if rootPart ~= nil then
+			VisualEffectsService.ShowConfettiBurst(rootPart.Position)
+			-- 3D, so everyone nearby hears the crowd react to THEIR lap, not
+			-- just the player who ran it.
+			SoundDirector.PlayAtPart(rootPart, "CrowdCheer")
+		end
+	end
 	Network.Track.ShowNotification:FireClient(
 		player,
-		`LAP COMPLETE! +{Utils.FormatNumber(EconomyRates.LapCompletionGoldReward)} 🪙 +{Utils.FormatNumber(EconomyRates.LapCompletionFanReward)} 🌟`,
+		`LAP COMPLETE! +{Utils.FormatNumber(goldReward)} 💰 +{Utils.FormatNumber(fanReward)} 🌟`,
 		"Pop"
 	)
+
+	if lapMs ~= nil then
+		local seconds = lapMs / 1000
+		if isNewBest then
+			Network.Track.ShowNotification:FireClient(player, `NEW PERSONAL BEST — {string.format("%.2f", seconds)}s!`, "Pop")
+		else
+			Network.Track.ShowNotification:FireClient(player, `LAP TIME {string.format("%.2f", seconds)}s`)
+		end
+	end
 end
 
 local function checkPlayer(player: Player)
 	if PlayerStateService.GetState(player) ~= PlayerState.InRace then
 		lastPositionByPlayer[player] = nil
+		-- Leaving the track abandons any lap in progress. Without this, a
+		-- player who returned to the Hub, wandered for ten minutes and came
+		-- back would close the old timing window on their next checkpoint 8
+		-- and post a ten-minute "lap".
+		lapStartClockByPlayer[player] = nil
 		return
 	end
 
@@ -227,11 +388,41 @@ local function checkPlayer(player: Player)
 	lastOrdinalByPlayer[player] = nextOrdinal
 	player:SetAttribute("CheckpointOrdinal", nextOrdinal)
 
+	-- Checkpoint 1 opens the timing window; checkpoint 8 closes it in
+	-- grantLapReward. Reassigning unconditionally (rather than only when the
+	-- clock is nil) is deliberate: crossing checkpoint 1 always means a fresh
+	-- lap is starting, whatever happened to the previous one.
+	if nextOrdinal == 1 then
+		lapStartClockByPlayer[player] = os.clock()
+	end
+
+	-- Seven of every eight checkpoints used to pass in complete silence: only
+	-- number 8 (the lap) made any noise, and the segment notice only fires on
+	-- a theme change. Feedback on every one of them is the point — a racer
+	-- should never have to check the HUD to know a checkpoint counted.
+	-- The lap gets its own bigger burst below instead of this one, so the
+	-- eighth doesn't fire two overlapping effects.
+	if nextOrdinal ~= CHECKPOINT_COUNT then
+		SoundDirector.PlayForPlayer(player, "CheckpointPassed")
+		if player.Character ~= nil then
+			VisualEffectsService.ShowCheckpointBurst(player.Character)
+		end
+		grantCheckpointReward(player)
+	end
+
+	if checkpointReachedHandler ~= nil then
+		checkpointReachedHandler(player, nextOrdinal)
+	end
+
 	-- Checkpoint 8 IS the finish line (see module docstring) — reaching it
 	-- completes the lap outright, no separate wrap-to-1 step needed.
 	if nextOrdinal == CHECKPOINT_COUNT then
 		lastOrdinalByPlayer[player] = 0 -- next expected is 1 again
 		grantLapReward(player)
+
+		if lapCompletedHandler ~= nil then
+			lapCompletedHandler(player)
+		end
 	end
 end
 
@@ -241,6 +432,7 @@ function CheckpointValidator.Init()
 	Players.PlayerRemoving:Connect(function(player: Player)
 		lastOrdinalByPlayer[player] = nil
 		lastPositionByPlayer[player] = nil
+		lapStartClockByPlayer[player] = nil
 	end)
 
 	task.spawn(function()

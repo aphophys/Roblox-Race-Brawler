@@ -11,6 +11,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SkillTrees = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("SkillTrees"))
+local Utils = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Utils"))
 
 local localPlayer = Players.LocalPlayer
 
@@ -70,10 +71,10 @@ local function refresh()
 		lapsLabel.Text = `Laps Completed: {(localPlayer:GetAttribute("TotalLapsCompleted") :: number?) or 0}`
 	end
 	if goldLabel ~= nil then
-		goldLabel.Text = `🪙 Gold: {(localPlayer:GetAttribute("Gold") :: number?) or 0}`
+		goldLabel.Text = `💰 Gold: {Utils.FormatNumber((localPlayer:GetAttribute("Gold") :: number?) or 0)}`
 	end
 	if fansLabel ~= nil then
-		fansLabel.Text = `🌟 Fans: {(localPlayer:GetAttribute("TotalFans") :: number?) or 0}`
+		fansLabel.Text = `🌟 Fans: {Utils.FormatNumber((localPlayer:GetAttribute("TotalFans") :: number?) or 0)}`
 	end
 	if skillsLabel ~= nil then
 		skillsLabel.Text = equippedSkillsSummary()

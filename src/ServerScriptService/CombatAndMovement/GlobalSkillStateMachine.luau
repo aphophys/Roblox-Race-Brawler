@@ -30,6 +30,8 @@ local EffectStackManager = require(script.Parent:WaitForChild("EffectStackManage
 local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
 
 local ProfileManager = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("ProfileManager"))
+local SoundDirector = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("SoundDirector"))
+local VisualEffectsService = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("VisualEffectsService"))
 
 export type GlobalSkillState = "Idle" | "Active" | "Cooldown"
 
@@ -46,6 +48,14 @@ local function activate(caster: Player, skillId: string, skillDefinition: SkillT
 	activeSkillId = skillId
 
 	Network.Combat.SkillCastResult:FireClient(caster, skillId, levelData.CooldownSeconds)
+	SoundDirector.PlayAtCharacter(caster, "SkillGlobal")
+	if caster.Character ~= nil then
+		VisualEffectsService.ShowCastBurst(caster.Character, Color3.fromRGB(178, 102, 255))
+	end
+
+	-- Upper-cased to sit in the same register as ActivationNoticeText and the
+	-- SegmentAnnouncer lines, which already shout their DisplayNames.
+	local skillName = string.upper(skillDefinition.DisplayName)
 
 	for _, player in Players:GetPlayers() do
 		if PlayerStateService.GetState(player) ~= PlayerState.InRace then
@@ -59,7 +69,25 @@ local function activate(caster: Player, skillId: string, skillDefinition: SkillT
 			levelData.EffectDurationSeconds,
 			atPeakLevel
 		)
-		Network.Track.ShowNotification:FireClient(player, skillDefinition.ActivationNoticeText)
+
+		-- ATTRIBUTION. The notice used to say only what had happened
+		-- ("SLOWED DOWN!"), which made a global read as weather — something the
+		-- track did to you. Naming the caster turns the same event into
+		-- somebody's doing, which is the whole appeal of a sabotage racer.
+		--
+		-- Effect first, blame second: what just happened to you is the part you
+		-- need in order to react, and the name is what you want a moment later.
+		--
+		-- Broadcasting this to every racer is affordable here and ONLY here: the
+		-- state machine allows one global to be Active server-wide at a time and
+		-- the cheapest global still has a 70s cooldown, so these arrive rarely by
+		-- construction. The same broadcast for Target skills would be ~3 toasts a
+		-- second on a full server — see TargetedSkillManager, which deliberately
+		-- tells only the two players involved.
+		local notice = if player == caster
+			then `⚡ YOU CAST {skillName}!`
+			else `{skillDefinition.ActivationNoticeText} — {caster.DisplayName} CAST {skillName}`
+		Network.Track.ShowNotification:FireClient(player, notice)
 	end
 
 	task.spawn(function()

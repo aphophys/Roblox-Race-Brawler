@@ -93,6 +93,12 @@ end
 
 local MODE_LABELS: { [ButtonMode]: string } = {
 	Pose = "POSE",
+	-- Free-run arcade entry, and only that. Grand Prix enrolment is a
+	-- separate, explicitly toggleable button in LeftMenuBar
+	-- (GrandPrixJoinController) — briefly merged into this one, then split
+	-- back out because "put me on the track now" and "sign me up for the
+	-- race in 20 minutes" are different intentions, and a momentary button
+	-- has no way to express opting back OUT of the second one.
 	JoinRace = "JOIN RACE",
 	PickUp = "PICK UP",
 	PickingUp = "PICKING UP...",
@@ -102,9 +108,8 @@ local MODE_LABELS: { [ButtonMode]: string } = {
 	Hidden = "",
 }
 
--- ReleaseSpell shows the carried skill's own name — an icon takes over once
--- SkillTrees.IconAssetId is populated, same text-fallback pattern used by
--- the skill loadout ribbon.
+-- ReleaseSpell shows the carried skill's own name — falls back to this if
+-- the carried skill's id can't be resolved.
 local function resolveReleaseSpellLabel() : string
 	local carriedSkillId = localPlayer:GetAttribute("CarriedSkillId") :: string?
 	if carriedSkillId == nil or carriedSkillId == "" then
@@ -119,6 +124,38 @@ local function resolveReleaseSpellLabel() : string
 	return definition.DisplayName
 end
 
+-- Only the ReleaseSpell mode (carrying a picked-up track skill) shows an
+-- icon on the button's left side, via the dedicated Icon/SpellLabel pair —
+-- every other mode (including carrying a Fan Payload) keeps using the
+-- button's own centered Text untouched, since a fan payload has no
+-- per-item icon to show.
+local function refreshIconAndSpellLabel(actionButton: TextButton, mode: ButtonMode)
+	local icon = actionButton:FindFirstChild("Icon") :: ImageLabel?
+	local spellLabel = actionButton:FindFirstChild("SpellLabel") :: TextLabel?
+	if icon == nil or spellLabel == nil then
+		return
+	end
+
+	local iconAssetId = ""
+	if mode == "ReleaseSpell" then
+		local carriedSkillId = localPlayer:GetAttribute("CarriedSkillId") :: string?
+		local definition = carriedSkillId ~= nil and carriedSkillId ~= "" and SkillTrees[carriedSkillId] or nil
+		iconAssetId = definition ~= nil and definition.IconAssetId or ""
+	end
+
+	if iconAssetId ~= "" then
+		icon.Image = iconAssetId
+		icon.Visible = true
+		spellLabel.Text = resolveReleaseSpellLabel()
+		spellLabel.Visible = true
+		actionButton.TextTransparency = 1
+	else
+		icon.Visible = false
+		spellLabel.Visible = false
+		actionButton.TextTransparency = 0
+	end
+end
+
 local function refresh()
 	local centerAction, actionButton = getActionButton()
 	if centerAction == nil or actionButton == nil then
@@ -128,6 +165,7 @@ local function refresh()
 	local mode = resolveMode()
 	centerAction.Visible = mode ~= "Hidden"
 	actionButton.Text = if mode == "ReleaseSpell" then resolveReleaseSpellLabel() else MODE_LABELS[mode]
+	refreshIconAndSpellLabel(actionButton, mode)
 end
 
 -- Fills PickupFill (a thin bar along the button's bottom edge, same "HP
@@ -179,7 +217,9 @@ function ActionButtonController.TriggerCurrentAction()
 	if mode == "PickingUp" or mode == "Hidden" then
 		return
 	elseif mode == "Pose" then
-		PoseUIController.RequestPose("Wave")
+		-- Cycles the free built-in emotes rather than always waving, so
+		-- pressing POSE twice does two different things. See PoseUIController.
+		PoseUIController.CycleAndRequestPose()
 	elseif mode == "JoinRace" then
 		Network.Hub.EnterTrack:FireServer()
 	elseif mode == "PickUp" then

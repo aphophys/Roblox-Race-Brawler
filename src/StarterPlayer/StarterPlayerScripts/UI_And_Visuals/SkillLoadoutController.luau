@@ -102,9 +102,11 @@ function SkillLoadoutController.Open(slotIndex: number)
 		entry.Visible = true
 		entry.Parent = skillList
 
+		local icon = entry:WaitForChild("Icon") :: ImageLabel
 		local nameLabel = entry:WaitForChild("NameLabel") :: TextLabel
 		local levelLabel = entry:WaitForChild("LevelLabel") :: TextLabel
 		nameLabel.Text = skillDefinition.DisplayName
+		icon.Image = skillDefinition.IconAssetId
 
 		local level = (localPlayer:GetAttribute(`SkillLevel_{skillId}`) :: number?) or 0
 

@@ -38,6 +38,8 @@ local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateServic
 local EffectStackManager = require(script.Parent:WaitForChild("EffectStackManager"))
 local ProfileManager = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("ProfileManager"))
 local TrackPickupSpawner = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("TrackPickupSpawner"))
+local SoundDirector = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("SoundDirector"))
+local VisualEffectsService = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("VisualEffectsService"))
 local SkillPickupSpawner = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("SkillPickupSpawner"))
 
 local TargetedSkillManager = require(script.Parent:WaitForChild("TargetedSkillManager"))
@@ -45,6 +47,9 @@ local GlobalSkillStateMachine = require(script.Parent:WaitForChild("GlobalSkillS
 local SelfSkillManager = require(script.Parent:WaitForChild("SelfSkillManager"))
 local SkillTrees = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("SkillTrees"))
 local ItemData = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemData"))
+local EconomyRates = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("EconomyRates"))
+
+local MonetizationService = require(script.Parent.Parent:WaitForChild("Monetization"):WaitForChild("MonetizationService"))
 
 local PROXIMITY_CHECK_INTERVAL_SECONDS = 0.5
 -- Shared with the client (ItemData.FanPickupChannelSeconds) so
@@ -52,15 +57,28 @@ local PROXIMITY_CHECK_INTERVAL_SECONDS = 0.5
 -- remote round-trip.
 local FAN_PICKUP_CHANNEL_SECONDS = ItemData.FanPickupChannelSeconds
 local SKILL_PICKUP_COOLDOWN_SECONDS = 5
-local CARRY_VISUAL_SIZE = Vector3.new(2, 2, 2)
-local CARRY_VISUAL_OFFSET = CFrame.new(0, 3, -2)
+
+-- Carried Fan Payload visual: an actual mini rigged noob (same classic-
+-- avatar proportions as FanBoxCrowdTemplates' crowd figures, just built
+-- standalone/weldable instead of unioned into a static mesh), riding
+-- directly above the carrying player's head — purely vertical offset, no
+-- forward/backward component (previously a floating ball 2 studs in front,
+-- which read as "carrying" less clearly than a rider on your shoulders).
+local CARRIED_NOOB_SCALE = 0.55
+local CARRIED_NOOB_HEAD_SIZE = Vector3.new(2, 1, 1) * CARRIED_NOOB_SCALE
+local CARRIED_NOOB_TORSO_SIZE = Vector3.new(2, 2, 1) * CARRIED_NOOB_SCALE
+local CARRIED_NOOB_LIMB_SIZE = Vector3.new(1, 2, 1) * CARRIED_NOOB_SCALE
+local CARRIED_NOOB_HEAD_COLOR = Color3.fromRGB(255, 216, 0)
+local CARRIED_NOOB_TORSO_COLOR = Color3.fromRGB(0, 73, 173)
+local CARRIED_NOOB_LEG_COLOR = Color3.fromRGB(44, 170, 46)
+local CARRY_VISUAL_OFFSET = CFrame.new(0, 4.3, 0)
 
 local CarryItemService = {}
 
 local carriedItems: { [Player]: string } = {}
 local carriedSkillId: { [Player]: string? } = {}
 local pickupChannelInProgress: { [Player]: boolean } = {}
-local carryVisualByPlayer: { [Player]: BasePart? } = {}
+local carryVisualByPlayer: { [Player]: Model? } = {}
 -- os.clock() timestamp of each player's last successful skill cast (via
 -- ReleaseTrackItem) — a new skill pickup won't auto-grant within
 -- SKILL_PICKUP_COOLDOWN_SECONDS of it, so pick->cast->pick->cast can't spam.
@@ -71,6 +89,80 @@ local function getRootPart(player: Player) : BasePart?
 	return character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
+-- Builds one small, non-animated noob rig positioned at
+-- `rootPart.CFrame * CARRY_VISUAL_OFFSET` (directly above the carrier),
+-- welded rigidly to itself (decorative only) and then to `rootPart` — the
+-- final WeldConstraint captures whatever relative offset the parts already
+-- have at creation time, so it rides along correctly as the carrier moves
+-- and turns without needing per-frame updates.
+local function buildCarriedNoob(rootPart: BasePart) : Model
+	local model = Instance.new("Model")
+	model.Name = "CarriedFanNoob"
+
+	local originCFrame = rootPart.CFrame * CARRY_VISUAL_OFFSET
+
+	local function newPart(name: string, size: Vector3, color: Color3, localY: number, localX: number) : BasePart
+		local part = Instance.new("Part")
+		part.Name = name
+		part.Anchored = false
+		part.CanCollide = false
+		part.CanQuery = false
+		part.Massless = true
+		part.Material = Enum.Material.SmoothPlastic
+		part.Color = color
+		part.Size = size
+		part.CFrame = originCFrame * CFrame.new(localX, localY, 0)
+		part.Parent = model
+		return part
+	end
+
+	local legsCenterY = CARRIED_NOOB_LIMB_SIZE.Y / 2
+	local torsoCenterY = CARRIED_NOOB_LIMB_SIZE.Y + CARRIED_NOOB_TORSO_SIZE.Y / 2
+	local headCenterY = CARRIED_NOOB_LIMB_SIZE.Y + CARRIED_NOOB_TORSO_SIZE.Y + CARRIED_NOOB_HEAD_SIZE.Y / 2
+	local legOffsetX = CARRIED_NOOB_LIMB_SIZE.X / 2
+	local armOffsetX = CARRIED_NOOB_TORSO_SIZE.X / 2 + CARRIED_NOOB_LIMB_SIZE.X / 2
+
+	local leftLeg = newPart("LeftLeg", CARRIED_NOOB_LIMB_SIZE, CARRIED_NOOB_LEG_COLOR, legsCenterY, -legOffsetX)
+	local rightLeg = newPart("RightLeg", CARRIED_NOOB_LIMB_SIZE, CARRIED_NOOB_LEG_COLOR, legsCenterY, legOffsetX)
+	local torso = newPart("Torso", CARRIED_NOOB_TORSO_SIZE, CARRIED_NOOB_TORSO_COLOR, torsoCenterY, 0)
+	local leftArm = newPart("LeftArm", CARRIED_NOOB_LIMB_SIZE, CARRIED_NOOB_HEAD_COLOR, torsoCenterY, -armOffsetX)
+	local rightArm = newPart("RightArm", CARRIED_NOOB_LIMB_SIZE, CARRIED_NOOB_HEAD_COLOR, torsoCenterY, armOffsetX)
+	local head = newPart("Head", CARRIED_NOOB_HEAD_SIZE, CARRIED_NOOB_HEAD_COLOR, headCenterY, 0)
+
+	local headMesh = Instance.new("SpecialMesh")
+	headMesh.MeshType = Enum.MeshType.Head
+	headMesh.Parent = head
+
+	local hrp = Instance.new("Part")
+	hrp.Name = "HumanoidRootPart"
+	hrp.Anchored = false
+	hrp.CanCollide = false
+	hrp.CanQuery = false
+	hrp.Massless = true
+	hrp.Transparency = 1
+	hrp.Size = Vector3.new(2, 2, 1) * CARRIED_NOOB_SCALE
+	hrp.CFrame = torso.CFrame
+	hrp.Parent = model
+	model.PrimaryPart = hrp
+
+	local humanoid = Instance.new("Humanoid")
+	humanoid.Parent = model
+
+	for _, part in { leftLeg, rightLeg, torso, leftArm, rightArm, head } do
+		local rigWeld = Instance.new("WeldConstraint")
+		rigWeld.Part0 = hrp
+		rigWeld.Part1 = part
+		rigWeld.Parent = part
+	end
+
+	local carryWeld = Instance.new("WeldConstraint")
+	carryWeld.Part0 = rootPart
+	carryWeld.Part1 = hrp
+	carryWeld.Parent = hrp
+
+	return model
+end
+
 local function attachCarryVisual(player: Player)
 	local character = player.Character
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -78,25 +170,10 @@ local function attachCarryVisual(player: Player)
 		return
 	end
 
-	local visual = Instance.new("Part")
-	visual.Name = "CarriedFanPayload"
-	visual.Anchored = false
-	visual.CanCollide = false
-	visual.CanQuery = false
-	visual.Massless = true
-	visual.Shape = Enum.PartType.Ball
-	visual.Material = Enum.Material.Neon
-	visual.Color = Color3.fromRGB(255, 215, 0)
-	visual.Size = CARRY_VISUAL_SIZE
-	visual.CFrame = rootPart.CFrame * CARRY_VISUAL_OFFSET
-	visual.Parent = character
+	local noobModel = buildCarriedNoob(rootPart)
+	noobModel.Parent = character
 
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = rootPart
-	weld.Part1 = visual
-	weld.Parent = visual
-
-	carryVisualByPlayer[player] = visual
+	carryVisualByPlayer[player] = noobModel
 end
 
 local function removeCarryVisual(player: Player)
@@ -121,6 +198,10 @@ local function grantFanPayload(player: Player, pickupIndex: number)
 	setCarriedType(player, CarryItemType.FanPayload)
 	attachCarryVisual(player)
 	Network.Track.ShowNotification:FireClient(player, "PICKED UP FANS!")
+	SoundDirector.PlayForPlayer(player, "PickupItem")
+	if player.Character ~= nil then
+		VisualEffectsService.ShowRewardBurst(player.Character)
+	end
 end
 
 local function startFanPickupChannel(player: Player, pickupIndex: number)
@@ -205,6 +286,14 @@ local function tryAutoGrantSkillPickup(player: Player, rootPart: BasePart)
 	carriedSkillId[player] = skillId
 	player:SetAttribute("CarriedSkillId", skillId)
 	setCarriedType(player, CarryItemType.TrackSkill)
+
+	-- This grant is automatic — no button press — so without feedback the
+	-- only sign a player has picked something up is the action button
+	-- quietly changing mode, which is easy to miss at racing speed.
+	SoundDirector.PlayForPlayer(player, "PickupItem")
+	if player.Character ~= nil then
+		VisualEffectsService.ShowRewardBurst(player.Character)
+	end
 end
 
 -- Drops whatever the player is carrying. Fan Payloads never simply vanish —
@@ -255,9 +344,33 @@ function CarryItemService.TryDeposit(player: Player) : boolean
 	end
 
 	local fanValue = TrackPickupSpawner.GetFanPayloadValue()
+
+	-- The delivery bonus. Claimed against a shared wall-clock window rather
+	-- than a per-player elapsed timer, and recorded in the PROFILE, so it
+	-- cannot be reset by rejoining — see Utils.GlobalWindowIndex. Marked as
+	-- claimed BEFORE the payout maths so an error further down can never
+	-- leave the window open with the gold already granted.
+	local bonusWindow = Utils.GlobalWindowIndex(EconomyRates.DepositBonusIntervalSeconds)
+	local isBonusRun = profile.Data.LastDepositBonusWindow ~= bonusWindow
+	if isBonusRun then
+		profile.Data.LastDepositBonusWindow = bonusWindow
+		fanValue *= EconomyRates.DepositBonusMultiplier
+	end
+
+	if MonetizationService.PlayerOwnsGamePass(player, "DoubleFans") then
+		fanValue *= EconomyRates.DoubleGainMultiplier
+	end
 	profile.Data.TotalFans += fanValue
 	ProfileManager.SyncAttributes(player)
-	Network.Track.ShowNotification:FireClient(player, `+{Utils.FormatNumber(fanValue)} 🌟 FANS!`, "Pop")
+
+	local notice = if isBonusRun
+		then `DELIVERY BONUS ×{EconomyRates.DepositBonusMultiplier}! +{Utils.FormatNumber(fanValue)} 🌟`
+		else `+{Utils.FormatNumber(fanValue)} 🌟 FANS!`
+	Network.Track.ShowNotification:FireClient(player, notice, "Pop")
+	SoundDirector.PlayForPlayer(player, "FanGain")
+	if player.Character ~= nil then
+		VisualEffectsService.ShowRewardBurst(player.Character)
+	end
 	removeCarryVisual(player)
 	setCarriedType(player, CarryItemType.None)
 	return true

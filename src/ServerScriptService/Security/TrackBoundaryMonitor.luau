@@ -35,7 +35,17 @@ local TeleportPoseService = require(script.Parent.Parent:WaitForChild("LobbyAndH
 local CHECK_INTERVAL_SECONDS = 0.5
 local STRAIGHT_SAMPLES_PER_SEGMENT = 6
 local ON_TRACK_MARGIN = TrackGeometry.SegmentWidth / 2 + TrackGeometry.BarrierThickness + 10
-local FALL_OUT_Y_THRESHOLD = -100
+-- Comfortably below any legitimate hazard depth (deepest is WaterDock/
+-- IceFrost's 8-stud water) and below SkyRail's 10-stud bridge height, so a
+-- player who genuinely falls through a SkyRail gap still gets a real,
+-- visible ~50-stud fall before the violation fires — not shrunk so far
+-- that a splash into deep water could false-trigger it. Was -100: that
+-- forced TrackGenerator's void-safety floor (see BASEPLATE_SAFETY_Y) 100+
+-- studs below the track, which read as "the whole map is floating in the
+-- air" when a player looked over any edge. Lower now so the map can sit
+-- much closer to solid ground without breaking the fall-to-violation
+-- mechanic SkyRail (and everything else's off-track fall-out) depends on.
+local FALL_OUT_Y_THRESHOLD = -40
 local WRONG_DIRECTION_THRESHOLD_STUDS = 20
 local WRONG_DIRECTION_DOT_THRESHOLD = -0.3
 -- A single check tick shouldn't see a legitimate racer move further than
@@ -175,6 +185,16 @@ local function checkPlayer(player: Player)
 			lastPositionByPlayer[player] = nil
 		end
 	end
+end
+
+-- Re-samples the track centerline — must be called after
+-- TrackGenerator.Regenerate(). The oval's own segment geometry (lengths/
+-- angles) is deterministic so trackPoints/trackForwards happen to still be
+-- numerically correct even without this, but there is no reason to leave
+-- a public API relying on that coincidence: call this whenever the Track
+-- folder gets rebuilt, matching CheckpointValidator.RefreshCheckpoints.
+function TrackBoundaryMonitor.RefreshTrackGeometry()
+	buildTrackPointCloud()
 end
 
 function TrackBoundaryMonitor.Init()

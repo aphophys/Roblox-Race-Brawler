@@ -30,6 +30,7 @@ local Network = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("
 local SkillTrees = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("SkillTrees"))
 
 local ProfileManager = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("ProfileManager"))
+local SoundDirector = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("SoundDirector"))
 
 local HubShoppingManager = {}
 
@@ -43,6 +44,7 @@ local function tryUnlock(player: Player, profile, itemId: string, skillDefinitio
 	profile.Data.Skills[itemId] = { Level = 1, Unlocked = true }
 	ProfileManager.SyncAttributes(player)
 	Network.Track.ShowNotification:FireClient(player, `{skillDefinition.DisplayName:upper()} UNLOCKED!`)
+	SoundDirector.PlayForPlayer(player, "Purchase")
 	return true
 end
 
@@ -66,6 +68,7 @@ local function tryUpgrade(player: Player, profile, skillData, skillDefinition) :
 	skillData.Level = nextLevel
 	ProfileManager.SyncAttributes(player)
 	Network.Track.ShowNotification:FireClient(player, `{skillDefinition.DisplayName:upper()} UPGRADED!`)
+	SoundDirector.PlayForPlayer(player, "Purchase")
 	return true
 end
 

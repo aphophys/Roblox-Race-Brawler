@@ -67,6 +67,22 @@
 	Also made every tier's CrowdMesh CanCollide = true this round (was
 	false) — a fan box stand should be something a player can walk up onto,
 	not pass through.
+
+	===== Full avatar scale + 6 steps + wider "stadium wall" (this round)
+	=====
+	Per direct feedback the figures "look small compared to avatar" —
+	NOOB_SCALE went from 0.5 to 1.0, so a noob figure is now built at the
+	SAME part sizes as a real Roblox R6 character (Head 2x1x1, Torso 2x2x1,
+	Arm/Leg 1x2x1 — no scaling at all, not just "closer"). STEP_HEIGHTS grew
+	from 3 to 6 ascending risers, and STEP_DEPTH from 4 to 6 studs (more
+	comfortable footing at the now-doubled figure size). NOOBS_PER_STEP_BY_
+	TIER keeps the same 8-value progression, just reapplied across 6 rows
+	instead of 3 — roughly doubling total crowd size per tier, matching the
+	now much larger stand. FanBoxGenerator widened PodBaseSize.Z and
+	switched pod placement from a fixed straight:curve pod-count RATIO to
+	an arc-length/target-width derivation, so adjacent pods sit almost
+	touching and the straight/curve spacing is actually even (see that
+	module for the full explanation) — the "connected stadium wall" look.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -86,27 +102,35 @@ local NOOB_TORSO_COLOR = Color3.fromRGB(0, 73, 173)
 local NOOB_LIMB_COLOR = Color3.fromRGB(44, 170, 46) -- legs
 local NOOB_ARM_COLOR = NOOB_HEAD_COLOR
 
--- Real classic-R6 default part sizes are Head (2,1,1), Torso (2,2,1), each
--- Arm/Leg (1,2,1) — scaled down uniformly so the proportions (what actually
--- reads as "a person" instead of stacked boxes) stay authentic.
-local NOOB_SCALE = 0.5
+-- Real classic-R6 default part sizes: Head (2,1,1), Torso (2,2,1), each
+-- Arm/Leg (1,2,1) — NOOB_SCALE = 1 means these are used AS-IS, so a noob
+-- figure is literally the same size as a real player's avatar (reported
+-- back as "looks small compared to avatar" at the previous 0.5 scale).
+local NOOB_SCALE = 1
 local NOOB_HEAD_SIZE = Vector3.new(2, 1, 1) * NOOB_SCALE
 local NOOB_TORSO_SIZE = Vector3.new(2, 2, 1) * NOOB_SCALE
 local NOOB_LIMB_SIZE = Vector3.new(1, 2, 1) * NOOB_SCALE -- shared by arms and legs
 
--- 3 ascending bleacher-style risers (stadium steps) — front (shortest,
--- closest to the track) to back (tallest, furthest from it). Depth (local
--- X thickness, away from the track) per step; PodBaseSize.X (24) must
--- comfortably fit #STEP_HEIGHTS * STEP_DEPTH. Fixed across every tier —
--- density (not step size) is what changes tier to tier.
-local STEP_HEIGHTS = { 2, 4.5, 7 }
-local STEP_DEPTH = 4
+-- 6 ascending bleacher-style risers (stadium steps, up from 3) — front
+-- (shortest, closest to the track) to back (tallest, furthest from it).
+-- Depth (local X thickness, away from the track) per step; PodBaseSize.X
+-- must comfortably fit #STEP_HEIGHTS * STEP_DEPTH (36 studs — see
+-- FanBoxGenerator). Fixed across every tier — density (not step size) is
+-- what changes tier to tier.
+local STEP_HEIGHTS = { 3, 6, 9, 12, 15, 18 }
+local STEP_DEPTH = 6
 
--- Figures per step, indexed by tier (1 = "Empty" .. 5 = "Superstar Crowd"
+-- Figures per step, indexed by tier (1 = "Empty" .. 8 = "Superstar Crowd"
 -- in FanBoxTiers) — see module docstring. 0 at Tier1 means bare steps, no
--- union-of-figures at all for an unclaimed/brand-new pod; 7 at Tier5 packs
--- the same density the original single-tier design always used.
-local NOOBS_PER_STEP_BY_TIER = { 0, 2, 4, 6, 7 }
+-- union-of-figures at all for an unclaimed/brand-new pod. Same 8-value
+-- progression as before the step count grew from 3 to 6 — reapplied
+-- across twice as many rows now, so total crowd size roughly doubles per
+-- tier, matching the much larger stand. Tops out at 9/step for Tier8
+-- (columnSpacing = PodBaseSize.Z / 9 — figures are ~4 studs wide at full
+-- avatar scale, so they overlap slightly at the very top tier, the same
+-- "sold out, packed shoulder-to-shoulder" look most simplified crowd-
+-- density systems lean on rather than a real bug).
+local NOOBS_PER_STEP_BY_TIER = { 0, 1, 2, 3, 4, 5, 7, 9 }
 
 local FanBoxCrowdTemplates = {}
 
@@ -174,14 +198,16 @@ local function stripSpecialMeshes(parts: { BasePart })
 	end
 end
 
--- Builds the 3 ascending step platforms plus `noobsPerStep` figures spread
+-- Builds the 6 ascending step platforms plus `noobsPerStep` figures spread
 -- evenly across each one (0 means bare steps, no figures at all), as plain
 -- anchored Parts parented directly under `parent`. Returns every part
 -- built. Step geometry is identical regardless of noobsPerStep — only
 -- density (and therefore spacing, since figures always spread across the
--- same PodBaseSize.Z width) changes tier to tier, so every tier stays
--- grounded exactly the same way.
-local function buildStepsAndCrowdParts(parent: Instance, originCFrame: CFrame, noobsPerStep: number) : { BasePart }
+-- same `podWidth`) changes tier to tier, so every tier stays grounded
+-- exactly the same way. `podWidth` is passed in by the caller (ultimately
+-- FanBoxGenerator) rather than read from FanBoxTiers.PodBaseSize.Z
+-- directly — see BuildAll's docstring for why.
+local function buildStepsAndCrowdParts(parent: Instance, originCFrame: CFrame, noobsPerStep: number, podWidth: number) : { BasePart }
 	local allParts: { BasePart } = {}
 
 	for stepIndex, stepHeight in STEP_HEIGHTS do
@@ -195,14 +221,14 @@ local function buildStepsAndCrowdParts(parent: Instance, originCFrame: CFrame, n
 		step.CanCollide = false
 		step.Material = Enum.Material.Concrete
 		step.Color = Color3.fromRGB(150, 150, 150)
-		step.Size = Vector3.new(STEP_DEPTH, stepHeight, FanBoxTiers.PodBaseSize.Z)
+		step.Size = Vector3.new(STEP_DEPTH, stepHeight, podWidth)
 		step.CFrame = originCFrame * CFrame.new(stepXCenter, stepHeight / 2, 0)
 		step.Name = `Step{stepIndex}`
 		step.Parent = parent
 		table.insert(allParts, step)
 
 		if noobsPerStep > 0 then
-			local columnSpacing = FanBoxTiers.PodBaseSize.Z / noobsPerStep
+			local columnSpacing = podWidth / noobsPerStep
 			for column = 0, noobsPerStep - 1 do
 				local localZ = (column - (noobsPerStep - 1) / 2) * columnSpacing
 				for _, figurePart in buildNoobFigureParts(originCFrame, stepXCenter, stepHeight, localZ) do
@@ -218,27 +244,27 @@ end
 
 -- Fallback used only if UnionAsync itself fails — a plain block, so
 -- BuildAll() always ends up with SOME usable template per tier.
-local function buildFallbackBlock() : BasePart
+local function buildFallbackBlock(podWidth: number) : BasePart
 	local block = Instance.new("Part")
 	block.Anchored = true
 	block.CanCollide = true -- a fan box stand should be something a player can stand on, not pass through
 	block.Material = Enum.Material.Fabric
 	block.Color = Color3.fromRGB(60, 120, 200)
-	block.Size = FanBoxTiers.PodBaseSize
+	block.Size = Vector3.new(FanBoxTiers.PodBaseSize.X, FanBoxTiers.PodBaseSize.Y, podWidth)
 	block.CFrame = CFrame.new(0, FanBoxTiers.PodBaseSize.Y / 2, 0)
 	return block
 end
 
 -- Builds + unions one tier's crowd shape, at CFrame.new(0,0,0), with
--- `noobsPerStep` figures on each of the 3 steps.
-local function buildCrowdMeshForTier(noobsPerStep: number) : BasePart
+-- `noobsPerStep` figures on each of the 6 steps.
+local function buildCrowdMeshForTier(noobsPerStep: number, podWidth: number) : BasePart
 	local originCFrame = CFrame.new(0, 0, 0)
 
 	local tempFolder = Instance.new("Folder")
 	tempFolder.Name = "TempCrowdParts"
 	tempFolder.Parent = workspace
 
-	local allParts = buildStepsAndCrowdParts(tempFolder, originCFrame, noobsPerStep)
+	local allParts = buildStepsAndCrowdParts(tempFolder, originCFrame, noobsPerStep, podWidth)
 	stripSpecialMeshes(allParts)
 
 	local firstPart = table.remove(allParts, 1) :: BasePart
@@ -253,7 +279,7 @@ local function buildCrowdMeshForTier(noobsPerStep: number) : BasePart
 		crowdMesh.CanCollide = true -- a fan box stand should be something a player can stand on, not pass through
 	else
 		warn(`FanBoxCrowdTemplates: UnionAsync failed ({tostring(result)}) — using a plain block for this tier instead.`)
-		crowdMesh = buildFallbackBlock()
+		crowdMesh = buildFallbackBlock(podWidth)
 	end
 
 	tempFolder:Destroy()
@@ -281,16 +307,25 @@ end
 
 local templatesFolder: Folder? = nil
 
--- Builds all 5 tier templates and stores them under ReplicatedStorage.
+-- Builds all 8 tier templates and stores them under ReplicatedStorage.
 -- Assets.FanBoxCrowdTemplates, each as a small Model (CrowdMesh +
--- GroundPivot — see module docstring). Blocking (5 UnionAsync yields) —
+-- GroundPivot — see module docstring). Blocking (8 UnionAsync yields) —
 -- meant to be called once, at server start, before any pod tries to clone
 -- from it.
-function FanBoxCrowdTemplates.BuildAll() : Folder?
+--
+-- `podWidth` is the ACTUAL width to build every tier's steps/figure-
+-- spacing at — passed in by FanBoxGenerator rather than read from
+-- FanBoxTiers.PodBaseSize.Z directly, because that width isn't always the
+-- same: FanBoxGenerator derives it (see computePodsPerPiece) from how many
+-- pods actually need to fit the track for the current Players.MaxPlayers,
+-- so pods stay non-overlapping and snugly "connected" even when a high
+-- player cap needs more (and therefore narrower) pods than the nominal
+-- FanBoxTiers.PodBaseSize.Z would allow without overlapping.
+function FanBoxCrowdTemplates.BuildAll(podWidth: number) : Folder?
 	if not BUILD_AS_SINGLE_MESH then
 		local debugFolder = Instance.new("Folder")
 		debugFolder.Name = "FanBoxCrowdDebug"
-		buildStepsAndCrowdParts(debugFolder, CFrame.new(0, 0, 0), NOOBS_PER_STEP_BY_TIER[#NOOBS_PER_STEP_BY_TIER])
+		buildStepsAndCrowdParts(debugFolder, CFrame.new(0, 0, 0), NOOBS_PER_STEP_BY_TIER[#NOOBS_PER_STEP_BY_TIER], podWidth)
 		debugFolder.Parent = workspace
 		return nil
 	end
@@ -300,7 +335,7 @@ function FanBoxCrowdTemplates.BuildAll() : Folder?
 
 	for tierIndex in FanBoxTiers.Tiers do
 		local noobsPerStep = NOOBS_PER_STEP_BY_TIER[tierIndex] or NOOBS_PER_STEP_BY_TIER[#NOOBS_PER_STEP_BY_TIER]
-		local tierCrowdMesh = buildCrowdMeshForTier(noobsPerStep)
+		local tierCrowdMesh = buildCrowdMeshForTier(noobsPerStep, podWidth)
 		tierCrowdMesh.Name = "CrowdMesh"
 
 		local tierModel = Instance.new("Model")

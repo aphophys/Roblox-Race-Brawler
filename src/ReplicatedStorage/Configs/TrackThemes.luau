@@ -65,8 +65,15 @@ local TrackThemes: TrackThemesType = {
 	Volcanic = {
 		Id = "Volcanic",
 		DisplayName = "Volcanic Ridge",
-		RoadColor = Color3.fromRGB(120, 45, 20),
-		RoadMaterial = Enum.Material.CrackedLava,
+		RoadColor = Color3.fromRGB(78, 46, 40),
+		-- Was CrackedLava. That material renders animated, self-illuminated
+		-- cracks across the WHOLE road surface, which reads as the segment
+		-- glittering rather than as a volcanic road — and it competed visually
+		-- with the actual hazard, since the magma patches are flat emissive
+		-- red (the same treatment the skill pickups use). Slate is matte and
+		-- takes scene lighting normally, so the only thing glowing on a
+		-- Volcanic segment is now the thing that costs a life.
+		RoadMaterial = Enum.Material.Slate,
 		BarrierColor = Color3.fromRGB(60, 30, 20),
 		WalkSpeedModifier = 0.9,
 		HazardTag = "Heat",

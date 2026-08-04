@@ -13,8 +13,11 @@
 ]]
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ServerStorage = game:GetService("ServerStorage")
+
+local Network = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"))
 
 local ProfileStore = require(ServerScriptService:WaitForChild("Packages"):WaitForChild("ProfileStore"))
 local ProfileTemplate = require(
@@ -57,6 +60,13 @@ function ProfileManager.SyncAttributes(player: Player)
 	player:SetAttribute("TotalFans", profile.Data.TotalFans)
 	player:SetAttribute("Lives", profile.Data.Lives)
 	player:SetAttribute("TotalLapsCompleted", profile.Data.TotalLapsCompleted)
+	-- Read by FanBoxRecordsBoard (and anything else that wants a record
+	-- without a remote round-trip). 0 means "no timed lap yet".
+	player:SetAttribute("BestLapTimeMs", profile.Data.BestLapTimeMs)
+	-- Mirrored so TutorialController can decide whether to run without a
+	-- RemoteFunction round-trip on join — same reasoning as the SkillLevel_*
+	-- attributes below.
+	player:SetAttribute("TutorialCompleted", profile.Data.TutorialCompleted)
 
 	for slotIndex = 1, 3 do
 		player:SetAttribute(`EquippedSkill{slotIndex}`, profile.Data.EquippedSkills[slotIndex] or "")
@@ -119,6 +129,19 @@ end
 function ProfileManager.Init()
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+	-- The tutorial marking itself done. Deliberately argument-free: the client
+	-- cannot say WHAT to set, only "I have seen it", so the worst a tampered
+	-- client can do is skip its own tutorial — which the Skip button already
+	-- offers for free.
+	Network.Track.CompleteTutorial.OnServerEvent:Connect(function(player: Player)
+		local profile = activeProfiles[player]
+		if profile == nil or profile.Data.TutorialCompleted then
+			return
+		end
+		profile.Data.TutorialCompleted = true
+		ProfileManager.SyncAttributes(player)
+	end)
 
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayerAdded, player)

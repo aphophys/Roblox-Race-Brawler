@@ -32,13 +32,17 @@ local function getLabels() : (TextLabel?, TextLabel?)
 	return goldLabel :: TextLabel?, fansLabel :: TextLabel?
 end
 
+-- 💰 not 🪙 — confirmed via an in-Studio render test that Roblox's default
+-- fonts don't have a glyph for the coin emoji (renders as an empty box);
+-- money-bag is an older, universally-supported emoji. Same swap applied
+-- everywhere else a Gold amount is shown.
 local function updateGold()
 	local goldLabel = getLabels()
 	if goldLabel == nil then
 		return
 	end
 	local gold = (localPlayer:GetAttribute("Gold") :: number?) or 0
-	goldLabel.Text = `🪙 {Utils.FormatNumber(gold)}`
+	goldLabel.Text = `💰 {Utils.FormatNumber(gold)}`
 end
 
 local function updateFans()

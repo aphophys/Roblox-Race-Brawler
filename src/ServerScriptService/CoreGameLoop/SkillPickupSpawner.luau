@@ -24,9 +24,18 @@ local SkillTrees = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChil
 local TrackPieceBuilder = require(script.Parent:WaitForChild("TrackPieceBuilder"))
 
 local PICKUPS_PER_CHECKPOINT = 3
-local PICKUP_INTERACT_RADIUS = 9
+-- Was 9/6 — with only 6 studs between adjacent pickups and a 9-stud radius,
+-- a player standing at the middle pickup was ALSO in range of both
+-- neighbors, and GetNearbySkillPickup returned whichever happened to come
+-- first in table order rather than the nearest — reported as "picking up
+-- skill gets the one beside it instead of the one in front." Widening the
+-- spacing and shrinking the radius (so radius < half the new spacing) means
+-- at most one pickup is ever in range at a time; GetNearbySkillPickup was
+-- ALSO fixed below to scan for the true nearest instead of the first match,
+-- so this is now correct even if a future tuning pass narrows the margin.
+local PICKUP_INTERACT_RADIUS = 5
 local PICKUP_VISUAL_SIZE = Vector3.new(3, 3, 3)
-local LATERAL_SPACING = 6 -- studs between the 3 pickups at one checkpoint
+local LATERAL_SPACING = 12 -- studs between the 3 pickups at one checkpoint
 local RESPAWN_SECONDS = 30
 
 export type SkillPickupEntry = {
@@ -49,8 +58,11 @@ local function surfaceOffsetY() : number
 	return TrackGeometry.RoadThickness / 2 + PICKUP_VISUAL_SIZE.Y / 2 + 1
 end
 
+-- Target skills are all debuffs cast at another racer (offensive); Self and
+-- Global keep their existing colors. Material stays Neon everywhere the
+-- markers get colored (buildMarker/ConsumePickup) — only the color changes.
 local COLOR_BY_CAST_TYPE: { [string]: Color3 } = {
-	Target = Color3.fromRGB(77, 171, 247),
+	Target = Color3.fromRGB(255, 61, 61),
 	Global = Color3.fromRGB(178, 102, 255),
 	Self = Color3.fromRGB(76, 217, 100),
 }
@@ -76,12 +88,27 @@ local function buildMarker(parent: Instance, entryCFrame: CFrame, lateralIndex: 
 end
 
 -- Returns (index, skillId) of the nearest available skill pickup within
--- range, or (nil, nil).
+-- range, or (nil, nil). Scans every in-range candidate and keeps the
+-- closest instead of returning the first match in table order — with 3
+-- pickups only LATERAL_SPACING apart, more than one can legitimately be
+-- within PICKUP_INTERACT_RADIUS at once, and table order has no relation
+-- to which one the player is actually standing in front of.
 function SkillPickupSpawner.GetNearbySkillPickup(position: Vector3) : (number?, string?)
+	local nearestIndex: number? = nil
+	local nearestDistance = math.huge
+
 	for index, entry in pickups do
-		if entry.Available and (entry.Position - position).Magnitude <= PICKUP_INTERACT_RADIUS then
-			return index, entry.SkillId
+		if entry.Available then
+			local distance = (entry.Position - position).Magnitude
+			if distance <= PICKUP_INTERACT_RADIUS and distance < nearestDistance then
+				nearestDistance = distance
+				nearestIndex = index
+			end
 		end
+	end
+
+	if nearestIndex ~= nil then
+		return nearestIndex, pickups[nearestIndex].SkillId
 	end
 	return nil, nil
 end

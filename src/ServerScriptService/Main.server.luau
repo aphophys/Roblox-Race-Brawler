@@ -31,8 +31,12 @@ Players.CharacterAutoLoads = false
 
 local ProfileManager = require(script.Parent.EconomyAndData.ProfileManager)
 local LeaderboardManager = require(script.Parent.EconomyAndData.LeaderboardManager)
+local QuestService = require(script.Parent.EconomyAndData.QuestService)
+local FanIncomeService = require(script.Parent.EconomyAndData.FanIncomeService)
 
 local ProcessReceiptManager = require(script.Parent.Monetization.ProcessReceiptManager)
+local MonetizationService = require(script.Parent.Monetization.MonetizationService)
+local DailyPassRewardService = require(script.Parent.Monetization.DailyPassRewardService)
 
 local PlayerStateService = require(script.Parent.CombatAndMovement.PlayerStateService)
 local EffectStackManager = require(script.Parent.CombatAndMovement.EffectStackManager)
@@ -54,21 +58,43 @@ local TrackBoundaryMonitor = require(script.Parent.Security.TrackBoundaryMonitor
 
 local TrackGenerator = require(script.Parent.CoreGameLoop.TrackGenerator)
 local HubGenerator = require(script.Parent.CoreGameLoop.HubGenerator)
+local HubAmenitiesBuilder = require(script.Parent.CoreGameLoop.HubAmenitiesBuilder)
+local LeaderboardBuilder = require(script.Parent.CoreGameLoop.LeaderboardBuilder)
+local StadiumBlimp = require(script.Parent.CoreGameLoop.StadiumBlimp)
 local TrackPickupSpawner = require(script.Parent.CoreGameLoop.TrackPickupSpawner)
 local SkillPickupSpawner = require(script.Parent.CoreGameLoop.SkillPickupSpawner)
+local ZoneHazardMonitor = require(script.Parent.CoreGameLoop.ZoneHazardMonitor)
+local DesertWindService = require(script.Parent.CoreGameLoop.DesertWindService)
 local ArcadeManager = require(script.Parent.CoreGameLoop.ArcadeManager)
 local GrandPrixManager = require(script.Parent.CoreGameLoop.GrandPrixManager)
+local SegmentAnnouncer = require(script.Parent.CoreGameLoop.SegmentAnnouncer)
+local PracticeDummyService = require(script.Parent.CoreGameLoop.PracticeDummyService)
 
 -- Data first: everything else assumes profiles can be loaded.
 ProfileManager.Init()
 ProcessReceiptManager.Init()
+-- Before anything that checks pass ownership: this is what hooks the purchase
+-- event that clears a stale "does not own" cache entry.
+MonetizationService.Init()
+-- After ProfileManager, same reason QuestService is: it polls GetProfile for
+-- each joining player before it can pay them.
+DailyPassRewardService.Init()
 LeaderboardManager.Init()
+-- After ProfileManager: QuestService polls GetProfile for each joining player
+-- and would otherwise race the very first join in a fresh server.
+QuestService.Init()
+FanIncomeService.Init()
 
 -- World geometry next, ahead of anything player-facing: HubGenerator places
 -- the SpawnLocation, so it needs to exist before any player's character
 -- could possibly spawn.
 TrackGenerator.Init()
 HubGenerator.Init()
+-- All three depend on HubGenerator.GetHubCFrame(), which is only populated
+-- once GenerateHub has run — so they must come after it, not merely near it.
+HubAmenitiesBuilder.Init()
+LeaderboardBuilder.Init()
+StadiumBlimp.Init()
 
 -- Track+Hub exist now — safe for characters to spawn, and (just as
 -- important in practice) this is what unblocks PlayerGui's first StarterGui
@@ -90,6 +116,8 @@ end)
 -- is normal, not a race with anything they could actually reach yet.
 TrackPickupSpawner.Init()
 SkillPickupSpawner.Init()
+ZoneHazardMonitor.Init()
+DesertWindService.Init()
 FanBoxGenerator.Init()
 
 -- Player/combat state next: track + hub logic reads from these.
@@ -115,3 +143,7 @@ TrackBoundaryMonitor.Init()
 -- Core loop remainder: race scheduling / free-run track.
 ArcadeManager.Init()
 GrandPrixManager.Init()
+-- After CheckpointValidator.Init() above (it registers a handler on it).
+SegmentAnnouncer.Init()
+-- Needs the Track to exist (it follows the checkpoint ring as waypoints).
+PracticeDummyService.Init()

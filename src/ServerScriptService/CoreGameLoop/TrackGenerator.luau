@@ -42,50 +42,31 @@
 	road/barrier geometry from scratch each time.
 ]]
 
-local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TrackBlueprints = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("TrackBlueprints"))
 local TrackGeometry = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("TrackGeometry"))
 local TrackThemes = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("TrackThemes"))
 local TrackPieceBuilder = require(script.Parent:WaitForChild("TrackPieceBuilder"))
 local TrackPieceTemplates = require(script.Parent:WaitForChild("TrackPieceTemplates"))
+local ThemeHazardBuilder = require(script.Parent:WaitForChild("ThemeHazardBuilder"))
+local TerrainGroundBuilder = require(script.Parent:WaitForChild("TerrainGroundBuilder"))
 
-local HAZARD_SEGMENT_COUNT = 2
-local MIN_THEME_COUNT = 2
-local MAX_THEME_COUNT = 4
+-- Exactly one distinct theme per segment pair — never fewer. This used to
+-- pick 2-4 themes and cycle them across the 4 pairs, which meant a
+-- generation could easily land the same theme on two or three pairs; with
+-- half the oval running the same hazard the lap reads as monotonous, which
+-- is exactly what was reported. There are 8 themes in the pool, so 4
+-- distinct is always satisfiable.
+local THEME_COUNT = 4
 -- The oval's 8 segments (SS-CC-SS-CC per TrackBlueprints) as 4 fixed pairs,
 -- each pair sharing one theme.
 local SEGMENT_PAIRS = { { 1, 2 }, { 3, 4 }, { 5, 6 }, { 7, 8 } }
 
 local TrackGenerator = {}
 
--- Picks HAZARD_SEGMENT_COUNT random segments to host a hazard bar. Safe to
--- pick from every segment even though every segment is also a checkpoint
--- now — the hazard sits at the segment's MIDPOINT while the checkpoint
--- trigger sits at its EXIT, so they never overlap; a respawned racer
--- won't be dropped straight into a hazard.
-local function pickRandomHazardSegments() : { [number]: boolean }
-	local eligible: { number } = {}
-	for _, segment in TrackBlueprints.OvalSegments do
-		table.insert(eligible, segment.SegmentIndex)
-	end
-
-	for i = #eligible, 2, -1 do
-		local j = math.random(1, i)
-		eligible[i], eligible[j] = eligible[j], eligible[i]
-	end
-
-	local chosen: { [number]: boolean } = {}
-	for i = 1, math.min(HAZARD_SEGMENT_COUNT, #eligible) do
-		chosen[eligible[i]] = true
-	end
-	return chosen
-end
-
--- Picks 2-4 distinct themes from the full TrackThemes pool and assigns one
--- to each of the oval's 4 segment pairs (cycling through the chosen themes
--- if fewer than 4 were picked, so every pair still gets one). Returns a
--- lookup from SegmentIndex (1-8) to the TrackTheme for that segment.
+-- Picks THEME_COUNT distinct themes from the full TrackThemes pool and gives
+-- one to each of the oval's 4 segment pairs. Returns a lookup from
+-- SegmentIndex (1-8) to the TrackTheme for that segment.
 local function pickOvalSegmentThemes() : { [number]: TrackThemes.TrackTheme }
 	local allThemeIds: { string } = {}
 	for themeId in TrackThemes do
@@ -97,7 +78,7 @@ local function pickOvalSegmentThemes() : { [number]: TrackThemes.TrackTheme }
 		allThemeIds[i], allThemeIds[j] = allThemeIds[j], allThemeIds[i]
 	end
 
-	local themeCount = math.min(math.random(MIN_THEME_COUNT, MAX_THEME_COUNT), #allThemeIds)
+	local themeCount = math.min(THEME_COUNT, #allThemeIds)
 	local chosenThemeIds: { string } = {}
 	for i = 1, themeCount do
 		table.insert(chosenThemeIds, allThemeIds[i])
@@ -105,6 +86,8 @@ local function pickOvalSegmentThemes() : { [number]: TrackThemes.TrackTheme }
 
 	local segmentThemes: { [number]: TrackThemes.TrackTheme } = {}
 	for pairIndex, segmentIndices in SEGMENT_PAIRS do
+		-- The modulo is now only a safety net for a hypothetically smaller
+		-- theme pool; with the stock 8-theme pool every pair gets its own.
 		local themeId = chosenThemeIds[((pairIndex - 1) % #chosenThemeIds) + 1]
 		local theme = TrackThemes[themeId]
 		for _, segmentIndex in segmentIndices do
@@ -168,82 +151,41 @@ local function buildPieceFromTemplate(segment: TrackBlueprints.SegmentBlueprint,
 	return pieceModel, exitCFrame
 end
 
+-- Y-size for checkpoint trigger volumes — taller than TrackGeometry.
+-- BarrierHeight (10) so SkyRail's elevated bridges (players can be up to
+-- ~10 studs above ground level while crossing) still fall inside the
+-- trigger's vertical band. Applying this uniformly to every checkpoint
+-- (not just ones after a SkyRail segment) is deliberate: a taller Y band
+-- only makes detection MORE permissive for every other theme, never less
+-- — no functional change for themes that stay at ground level.
+local CHECKPOINT_TRIGGER_HEIGHT = 40
+
 local function addCheckpointTrigger(parent: Instance, pieceExitCFrame: CFrame, ordinal: number)
 	local trigger = Instance.new("Part")
 	trigger.Anchored = true
 	trigger.CanCollide = false
 	trigger.Transparency = 1
 	trigger.Name = `CheckpointTrigger_{ordinal}`
-	trigger.Size = Vector3.new(TrackGeometry.SegmentWidth, TrackGeometry.BarrierHeight, TrackGeometry.CheckpointTriggerThickness)
+	trigger.Size = Vector3.new(TrackGeometry.SegmentWidth, CHECKPOINT_TRIGGER_HEIGHT, TrackGeometry.CheckpointTriggerThickness)
 	trigger.CFrame = pieceExitCFrame
 	trigger:SetAttribute("CheckpointOrdinal", ordinal)
 	trigger.Parent = parent
 end
 
--- Per project spec, hazards spin via AssemblyAngularVelocity (not a
--- HingeConstraint motor). The part stays unanchored so the angular velocity
--- actually has visible effect, and an AlignPosition constraint holds it at
--- its spawn point so it spins in place instead of falling under gravity.
--- Collision with players is plain rigid-body contact, not a .Touched
--- listener, so it doesn't violate the no-.Touched detection rule.
---
--- Reported repeatedly as ending up visibly misplaced despite the spawn
--- CFrame itself being verified correct (re-derived twice, no bug found in
--- the placement math) — the remaining plausible explanation is PHYSICS
--- DRIFT: this part is unanchored + CanCollide = true, so every player hit
--- imparts a real impulse/torque. AlignPosition being force-based (not a
--- hard constraint) meant enough repeated or fast hits could out-pace its
--- restoring force before the next frame, and nothing was ever re-asserting
--- AssemblyAngularVelocity after creation, so a hit could also tip the spin
--- axis or change its rate permanently, with no correction. Two changes
--- directly close both gaps: RigidityEnabled makes the position hold a hard
--- constraint (snaps back immediately, not spring-based, so it can't drift
--- position at all regardless of hit frequency/force), and a Heartbeat loop
--- continuously re-asserts the intended spin so a hit can never leave it
--- tumbling on the wrong axis or spinning at the wrong rate. Disconnects via
--- Destroying so it doesn't leak across TrackGenerator.Regenerate() calls.
-local function addHazardBar(parent: Instance, pieceCenterCFrame: CFrame)
-	local pivotCFrame = pieceCenterCFrame * CFrame.new(0, TrackGeometry.BarrierHeight / 2, 0)
-	local targetAngularVelocity = Vector3.new(0, math.rad(TrackGeometry.HazardSpinDegreesPerSecond), 0)
-
-	local hazard = Instance.new("Part")
-	hazard.Anchored = false
-	hazard.CanCollide = true
-	hazard.Material = Enum.Material.Neon
-	hazard.Color = Color3.fromRGB(255, 140, 0)
-	hazard.Name = "HazardBar"
-	hazard.Size = Vector3.new(TrackGeometry.HazardBarLength, 1, 1)
-	hazard.CFrame = pivotCFrame
-
-	local attachment = Instance.new("Attachment")
-	attachment.Parent = hazard
-
-	local alignPosition = Instance.new("AlignPosition")
-	alignPosition.Mode = Enum.PositionAlignmentMode.OneAttachment
-	alignPosition.Attachment0 = attachment
-	alignPosition.Position = pivotCFrame.Position
-	alignPosition.MaxForce = 1e6 -- large-but-finite; math.huge can destabilize Roblox's physics solver
-	alignPosition.Responsiveness = 200
-	alignPosition.RigidityEnabled = true -- hard position lock, not spring-based — cannot drift under repeated collisions
-	alignPosition.Parent = hazard
-
-	hazard.AssemblyAngularVelocity = targetAngularVelocity
-
-	local heartbeatConnection: RBXScriptConnection
-	heartbeatConnection = RunService.Heartbeat:Connect(function()
-		hazard.AssemblyAngularVelocity = targetAngularVelocity
-	end)
-	hazard.Destroying:Connect(function()
-		heartbeatConnection:Disconnect()
-	end)
-
-	hazard.Parent = parent
-end
-
 -- Builds the oval under `parent`, returns the folder containing all pieces.
--- Hazard segments are re-randomized on every call — see module docstring.
+-- Every segment now gets its assigned theme's own real hazard (see
+-- ThemeHazardBuilder) instead of a random generic sprinkle.
+--
+-- TerrainGroundBuilder.Rebuild() runs FIRST, before any piece exists: Terrain
+-- is a single global instance, not scoped to this Track folder, so laying
+-- fresh ground over the whole map footprint is also what wipes the previous
+-- generation's water pools and SkyRail chasms (one FillBlock rewrites
+-- material and occupancy for every voxel it covers). Hazards then carve back
+-- into that clean ground as they build. Order matters — running it after the
+-- pieces would fill in the very holes they just cut.
 function TrackGenerator.GenerateOval(parent: Instance) : Folder
-	local hazardSegments = pickRandomHazardSegments()
+	TerrainGroundBuilder.Rebuild()
+
 	local segmentThemes = pickOvalSegmentThemes()
 
 	local trackFolder = Instance.new("Folder")
@@ -262,11 +204,13 @@ function TrackGenerator.GenerateOval(parent: Instance) : Folder
 		addCheckpointTrigger(checkpointsFolder, exitCFrame, segment.CheckpointOrdinal)
 
 		pieceModel.Name = segment.SegmentName
+		pieceModel:SetAttribute("ThemeId", theme.Id)
+		pieceModel:SetAttribute("SegmentIndex", segment.SegmentIndex)
 		pieceModel.Parent = trackFolder
 
-		if hazardSegments[segment.SegmentIndex] then
-			local pieceMidpointCFrame = currentCFrame:Lerp(exitCFrame, 0.5)
-			addHazardBar(pieceModel, pieceMidpointCFrame)
+		local hazardBuilder = ThemeHazardBuilder.HAZARD_BUILDERS[theme.Id]
+		if hazardBuilder ~= nil then
+			hazardBuilder(pieceModel, segment, currentCFrame, exitCFrame)
 		end
 
 		currentCFrame = exitCFrame
@@ -287,7 +231,56 @@ function TrackGenerator.Regenerate(parent: Instance) : Folder
 	return TrackGenerator.GenerateOval(parent)
 end
 
+-- Studio's default new-place template leaves a real, solid "Baseplate" Part
+-- (2048x16x2048, top surface at Y=0) sitting under the entire map. It isn't
+-- referenced anywhere in this codebase (not Rojo-managed either — Workspace
+-- isn't in default.project.json) — pure leftover scaffolding. It's harmless
+-- everywhere the Road is intact (hidden underneath), but it silently
+-- defeats every hazard that depends on a real gap at ground level: a
+-- WaterDock/IceFrost pool's Road gets cut so players should fall into the
+-- Terrain water below, and a SkyRail bridge gap should drop a player until
+-- TrackBoundaryMonitor's fall-out check catches them — the Baseplate's
+-- Y=0 surface just catches them first instead, standing them on dry land
+-- in the middle of what's supposed to be water/a fall.
+--
+-- Relocated far below the play area rather than destroyed outright: it's
+-- still the last-resort floor under TerrainGroundBuilder's SkyRail chasms,
+-- and the safety net for players who aren't InRace (TrackBoundaryMonitor's
+-- fall-out check only runs for InRace players — someone wandering the Hub/
+-- FanBox area who walks off built geometry has nothing else catching them).
+-- Kept just below TrackBoundaryMonitor.FALL_OUT_Y_THRESHOLD (-40) so an
+-- InRace player always triggers the proper checkpoint-respawn violation
+-- before ever landing on it.
+--
+-- What it is NOT anymore is the map's visible ground. That was the actual
+-- "map is above ground" bug: this Part was simultaneously the only ground in
+-- the place AND the thing that had to stay far below the track to avoid
+-- plugging the hazards, so the entire world (Y ~ 0..23) hung ~47 studs over
+-- open air. TerrainGroundBuilder now owns visible ground, which frees this
+-- Part to be purely a safety floor — hidden underneath the terrain slab
+-- rather than being the surface players look down at. Done here (not left as
+-- a one-off manual Studio edit) so it can't silently reappear at Y=0 from an
+-- unsaved session or a fresh place file and reintroduce the interference.
+local BASEPLATE_SAFETY_Y = -55
+
+-- Also resized to the ground's own footprint. At its stock 2048x2048 it
+-- sticks out well past the terrain on every side, and a bare grey plane 47
+-- studs below the edge of the grass reads as exactly the same "floating
+-- island" problem the terrain was added to fix — just moved to the map's
+-- outer boundary. Matching the footprints means the terrain fully hides it.
+local function fitLegacyBaseplate()
+	local baseplate = workspace:FindFirstChild("Baseplate")
+	if baseplate == nil or not baseplate:IsA("BasePart") then
+		return
+	end
+
+	local groundCFrame, groundSize = TerrainGroundBuilder.GetGroundVolume()
+	baseplate.Size = Vector3.new(groundSize.X, baseplate.Size.Y, groundSize.Z)
+	baseplate.CFrame = CFrame.new(groundCFrame.Position.X, BASEPLATE_SAFETY_Y, groundCFrame.Position.Z)
+end
+
 function TrackGenerator.Init()
+	fitLegacyBaseplate()
 	TrackPieceTemplates.BuildAll()
 	TrackGenerator.GenerateOval(workspace)
 end

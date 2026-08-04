@@ -14,7 +14,15 @@
           "FireGlobalSkill": { "$className": "RemoteEvent" },
           "FireSelfSkill": { "$className": "RemoteEvent" },
           "UseTrackItem": { "$className": "RemoteEvent" },
-          "SkillCastResult": { "$className": "RemoteEvent" }
+          "SkillCastResult": { "$className": "RemoteEvent" },
+          "ApplyControlEffect": { "$className": "RemoteEvent" },
+          "ActiveEffectChanged": { "$className": "RemoteEvent" }
+        },
+        "Quests": {
+          "$className": "Folder",
+          "QuestStateChanged": { "$className": "RemoteEvent" },
+          "RequestQuestState": { "$className": "RemoteEvent" },
+          "ClaimQuestTier": { "$className": "RemoteEvent" }
         },
         "Economy": {
           "$className": "Folder",
@@ -30,14 +38,21 @@
           "TeleportToFanBox": { "$className": "RemoteEvent" },
           "ReturnToHub": { "$className": "RemoteEvent" },
           "PerformPose": { "$className": "RemoteEvent" },
-          "EnterTrack": { "$className": "RemoteEvent" }
+          "EnterTrack": { "$className": "RemoteEvent" },
+          "ToggleGrandPrixEntry": { "$className": "RemoteEvent" }
         },
         "Track": {
           "$className": "Folder",
           "CheckpointPassed": { "$className": "RemoteEvent" },
           "UpdateRaceStandings": { "$className": "RemoteEvent" },
           "ShowNotification": { "$className": "RemoteEvent" },
-          "GrandPrixStateChanged": { "$className": "RemoteEvent" }
+          "CompleteTutorial": { "$className": "RemoteEvent" },
+          "GrandPrixStateChanged": { "$className": "RemoteEvent" },
+          "GrandPrixTimer": { "$className": "RemoteEvent" },
+          "PlaySound": { "$className": "RemoteEvent" },
+          "PlayerEliminated": { "$className": "RemoteEvent" },
+          "BuyExtraLifeWithGold": { "$className": "RemoteEvent" },
+          "EliminationResolved": { "$className": "RemoteEvent" }
         }
       },
 
@@ -70,6 +85,10 @@
     },
 
     "StarterGui": {
+      "$properties": {
+        "ScreenOrientation": "LandscapeSensor"
+      },
+
       "MainHUD": {
         "$className": "ScreenGui",
         "$properties": {
@@ -110,7 +129,7 @@
         "StatsRow": {
           "$className": "Frame",
           "$properties": {
-            "Size": { "UDim2": [[0.46, 0], [0.07, 0]] },
+            "Size": { "UDim2": [[0.58, 0], [0.07, 0]] },
             "Position": { "UDim2": [[0.5, 0], [0.03, 0]] },
             "AnchorPoint": { "Vector2": [0.5, 0] },
             "BackgroundTransparency": 1
@@ -119,7 +138,7 @@
           "GoldCapsule": {
             "$className": "Frame",
             "$properties": {
-              "Size": { "UDim2": [[0.30, 0], [1, 0]] },
+              "Size": { "UDim2": [[0.22, 0], [1, 0]] },
               "BackgroundColor3": { "Color3": [1, 1, 1] },
               "BackgroundTransparency": 0.1,
               "BorderSizePixel": 0,
@@ -134,7 +153,7 @@
                 "Position": { "UDim2": [[0.5, 0], [0.5, 0]] },
                 "AnchorPoint": { "Vector2": [0.5, 0.5] },
                 "BackgroundTransparency": 1,
-                "Text": "🪙 0",
+                "Text": "💰 0",
                 "TextColor3": { "Color3": [0.55, 0.42, 0.08] },
                 "Font": "GothamBold",
                 "TextScaled": true
@@ -144,7 +163,7 @@
           "FansCapsule": {
             "$className": "Frame",
             "$properties": {
-              "Size": { "UDim2": [[0.30, 0], [1, 0]] },
+              "Size": { "UDim2": [[0.22, 0], [1, 0]] },
               "BackgroundColor3": { "Color3": [1, 1, 1] },
               "BackgroundTransparency": 0.1,
               "BorderSizePixel": 0,
@@ -169,7 +188,7 @@
           "CheckpointCapsule": {
             "$className": "Frame",
             "$properties": {
-              "Size": { "UDim2": [[0.36, 0], [1, 0]] },
+              "Size": { "UDim2": [[0.28, 0], [1, 0]] },
               "BackgroundColor3": { "Color3": [1, 1, 1] },
               "BackgroundTransparency": 0.1,
               "BorderSizePixel": 0,
@@ -186,6 +205,32 @@
                 "BackgroundTransparency": 1,
                 "Text": "Checkpoint 0 / 8",
                 "TextColor3": { "Color3": [0.14, 0.32, 0.47] },
+                "Font": "GothamBold",
+                "TextScaled": true
+              }
+            }
+          },
+          "LivesCapsule": {
+            "$className": "Frame",
+            "$properties": {
+              "Size": { "UDim2": [[0.22, 0], [1, 0]] },
+              "BackgroundColor3": { "Color3": [1, 1, 1] },
+              "BackgroundTransparency": 0.1,
+              "BorderSizePixel": 0,
+              "Visible": false,
+              "LayoutOrder": 4
+            },
+            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [1, 0] } } },
+            "UIStroke": { "$className": "UIStroke", "$properties": { "Color": { "Color3": [0.94, 0.30, 0.30] }, "Thickness": 2 } },
+            "LivesLabel": {
+              "$className": "TextLabel",
+              "$properties": {
+                "Size": { "UDim2": [[0.86, 0], [0.8, 0]] },
+                "Position": { "UDim2": [[0.5, 0], [0.5, 0]] },
+                "AnchorPoint": { "Vector2": [0.5, 0.5] },
+                "BackgroundTransparency": 1,
+                "Text": "Lives: 3",
+                "TextColor3": { "Color3": [0.70, 0.16, 0.16] },
                 "Font": "GothamBold",
                 "TextScaled": true
               }
@@ -218,10 +263,200 @@
           }
         },
 
+        "QuestPanel": {
+          "$className": "Frame",
+          "$properties": {
+            "Size": { "UDim2": [[0.52, 0], [0.72, 0]] },
+            "Position": { "UDim2": [[0.5, 0], [0.5, 0]] },
+            "AnchorPoint": { "Vector2": [0.5, 0.5] },
+            "BackgroundColor3": { "Color3": [0.97, 0.97, 1] },
+            "BorderSizePixel": 0,
+            "Visible": false,
+            "ZIndex": 50
+          },
+          "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 18] } } },
+          "UIStroke": { "$className": "UIStroke", "$properties": { "Color": { "Color3": [0.20, 0.75, 0.45] }, "Thickness": 3 } },
+          "TitleLabel": {
+            "$className": "TextLabel",
+            "$properties": {
+              "Size": { "UDim2": [[1, 0], [0, 44]] },
+              "BackgroundTransparency": 1,
+              "Text": "QUESTS",
+              "TextColor3": { "Color3": [0.18, 0.18, 0.25] },
+              "Font": "GothamBold",
+              "TextSize": 24,
+              "ZIndex": 51
+            }
+          },
+          "CloseButton": {
+            "$className": "TextButton",
+            "$properties": {
+              "Size": { "UDim2": [[0, 34], [0, 34]] },
+              "Position": { "UDim2": [[1, -12], [0, 12]] },
+              "AnchorPoint": { "Vector2": [1, 0] },
+              "BackgroundColor3": { "Color3": [0.94, 0.30, 0.30] },
+              "BorderSizePixel": 0,
+              "Text": "X",
+              "TextColor3": { "Color3": [1, 1, 1] },
+              "Font": "GothamBold",
+              "TextSize": 18,
+              "AutoButtonColor": true,
+              "ZIndex": 52
+            },
+            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [1, 0] } } }
+          },
+          "CategoryList": {
+            "$className": "ScrollingFrame",
+            "$properties": {
+              "Size": { "UDim2": [[0.92, 0], [1, -64] ] },
+              "Position": { "UDim2": [[0.04, 0], [0, 52]] },
+              "BackgroundTransparency": 1,
+              "BorderSizePixel": 0,
+              "CanvasSize": { "UDim2": [[0, 0], [0, 0]] },
+              "AutomaticCanvasSize": "Y",
+              "ScrollBarThickness": 6,
+              "ScrollBarImageColor3": { "Color3": [0.7, 0.7, 0.7] },
+              "ZIndex": 51
+            },
+            "UIListLayout": { "$className": "UIListLayout", "$properties": { "SortOrder": "LayoutOrder", "Padding": { "UDim": [0, 10] } } },
+            "EntryTemplate": {
+              "$className": "Frame",
+              "$properties": {
+                "Size": { "UDim2": [[1, 0], [0, 92]] },
+                "BackgroundColor3": { "Color3": [1, 1, 1] },
+                "BorderSizePixel": 0,
+                "Visible": false,
+                "ZIndex": 51
+              },
+              "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 12] } } },
+              "UIStroke": { "$className": "UIStroke", "$properties": { "Color": { "Color3": [0.85, 0.85, 0.9] }, "Thickness": 2 } },
+              "NameLabel": {
+                "$className": "TextLabel",
+                "$properties": {
+                  "Size": { "UDim2": [[0.66, 0], [0, 24]] },
+                  "Position": { "UDim2": [[0.03, 0], [0, 8]] },
+                  "BackgroundTransparency": 1,
+                  "Text": "",
+                  "TextColor3": { "Color3": [0.18, 0.18, 0.25] },
+                  "Font": "GothamBold",
+                  "TextSize": 16,
+                  "TextXAlignment": "Left",
+                  "ZIndex": 52
+                }
+              },
+              "DescriptionLabel": {
+                "$className": "TextLabel",
+                "$properties": {
+                  "Size": { "UDim2": [[0.66, 0], [0, 18]] },
+                  "Position": { "UDim2": [[0.03, 0], [0, 30]] },
+                  "BackgroundTransparency": 1,
+                  "Text": "",
+                  "TextColor3": { "Color3": [0.45, 0.45, 0.55] },
+                  "Font": "Gotham",
+                  "TextSize": 12,
+                  "TextXAlignment": "Left",
+                  "TextTruncate": "AtEnd",
+                  "ZIndex": 52
+                }
+              },
+              "ProgressLabel": {
+                "$className": "TextLabel",
+                "$properties": {
+                  "Size": { "UDim2": [[0.66, 0], [0, 18]] },
+                  "Position": { "UDim2": [[0.03, 0], [0, 52]] },
+                  "BackgroundTransparency": 1,
+                  "Text": "",
+                  "TextColor3": { "Color3": [0.25, 0.55, 0.85] },
+                  "Font": "GothamBold",
+                  "TextSize": 13,
+                  "TextXAlignment": "Left",
+                  "ZIndex": 52
+                }
+              },
+              "ProgressBarBack": {
+                "$className": "Frame",
+                "$properties": {
+                  "Size": { "UDim2": [[0.64, 0], [0, 8]] },
+                  "Position": { "UDim2": [[0.03, 0], [0, 74]] },
+                  "BackgroundColor3": { "Color3": [0.88, 0.88, 0.92] },
+                  "BorderSizePixel": 0,
+                  "ZIndex": 52
+                },
+                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [1, 0] } } },
+                "Fill": {
+                  "$className": "Frame",
+                  "$properties": {
+                    "Size": { "UDim2": [[0, 0], [1, 0]] },
+                    "BackgroundColor3": { "Color3": [0.20, 0.75, 0.45] },
+                    "BorderSizePixel": 0,
+                    "ZIndex": 53
+                  },
+                  "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [1, 0] } } }
+                }
+              },
+              "ClaimButton": {
+                "$className": "TextButton",
+                "$properties": {
+                  "Size": { "UDim2": [[0.26, 0], [0, 44]] },
+                  "Position": { "UDim2": [[0.97, 0], [0.5, 0]] },
+                  "AnchorPoint": { "Vector2": [1, 0.5] },
+                  "BackgroundColor3": { "Color3": [0.20, 0.75, 0.45] },
+                  "BorderSizePixel": 0,
+                  "Text": "CLAIM",
+                  "TextColor3": { "Color3": [1, 1, 1] },
+                  "Font": "GothamBold",
+                  "TextSize": 14,
+                  "AutoButtonColor": true,
+                  "ZIndex": 52
+                },
+                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } }
+              }
+            }
+          }
+        },
+
+        "SpecialTaskButton": {
+          "$className": "TextButton",
+          "$properties": {
+            "Size": { "UDim2": [[0.14, 0], [0.07, 0]] },
+            "Position": { "UDim2": [[0.98, 0], [0.03, 0]] },
+            "AnchorPoint": { "Vector2": [1, 0] },
+            "BackgroundColor3": { "Color3": [1, 0.41, 0.71] },
+            "BorderSizePixel": 0,
+            "Text": "ADD FANS",
+            "TextColor3": { "Color3": [1, 1, 1] },
+            "Font": "GothamBold",
+            "TextScaled": true,
+            "AutoButtonColor": true
+          },
+          "UISizeConstraint": { "$className": "UISizeConstraint", "$properties": { "MinSize": { "Vector2": [92, 28] } } },
+          "UITextSizeConstraint": { "$className": "UITextSizeConstraint", "$properties": { "MaxTextSize": 14, "MinTextSize": 8 } },
+          "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [1, 0] } } },
+          "UIStroke": { "$className": "UIStroke", "$properties": { "Color": { "Color3": [1, 0.41, 0.71] }, "Thickness": 2 } },
+          "UIGradient": { "$className": "UIGradient", "$properties": { "Rotation": 90 } },
+          "ClaimBadge": {
+            "$className": "TextLabel",
+            "$properties": {
+              "Size": { "UDim2": [[0, 18], [0, 18]] },
+              "Position": { "UDim2": [[1, -8], [0, -4]] },
+              "AnchorPoint": { "Vector2": [1, 0] },
+              "BackgroundColor3": { "Color3": [1, 0.24, 0.24] },
+              "BorderSizePixel": 0,
+              "Text": "!",
+              "TextColor3": { "Color3": [1, 1, 1] },
+              "Font": "GothamBold",
+              "TextSize": 13,
+              "Visible": false,
+              "ZIndex": 3
+            },
+            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [1, 0] } } }
+          }
+        },
+
         "LeftMenuBar": {
           "$className": "Frame",
           "$properties": {
-            "Size": { "UDim2": [[0.16, 0], [0.20, 0]] },
+            "Size": { "UDim2": [[0.16, 0], [0.34, 0]] },
             "Position": { "UDim2": [[0.02, 0], [0.15, 0]] },
             "BackgroundTransparency": 1
           },
@@ -309,6 +544,70 @@
                 "ZIndex": 2
               }
             }
+          },
+          "QuestButton": {
+            "$className": "TextButton",
+            "$properties": {
+              "Size": { "UDim2": [[1, 0], [0, 36]] },
+              "BackgroundColor3": { "Color3": [0.20, 0.75, 0.45] },
+              "BorderSizePixel": 0,
+              "Text": "QUESTS",
+              "TextColor3": { "Color3": [1, 1, 1] },
+              "Font": "GothamBold",
+              "TextSize": 14,
+              "AutoButtonColor": true,
+              "LayoutOrder": 4
+            },
+            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 12] } } },
+            "UIGradient": { "$className": "UIGradient", "$properties": { "Rotation": 90 } },
+            "ClaimBadge": {
+              "$className": "TextLabel",
+              "$properties": {
+                "Size": { "UDim2": [[0, 18], [0, 18]] },
+                "Position": { "UDim2": [[1, -8], [0, -4]] },
+                "AnchorPoint": { "Vector2": [1, 0] },
+                "BackgroundColor3": { "Color3": [1, 0.24, 0.24] },
+                "BorderSizePixel": 0,
+                "Text": "!",
+                "TextColor3": { "Color3": [1, 1, 1] },
+                "Font": "GothamBold",
+                "TextSize": 13,
+                "Visible": false,
+                "ZIndex": 3
+              },
+              "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [1, 0] } } }
+            }
+          },
+          "JoinGrandPrixButton": {
+            "$className": "TextButton",
+            "$properties": {
+              "Size": { "UDim2": [[1, 0], [0, 36]] },
+              "BackgroundColor3": { "Color3": [1, 0.55, 0.15] },
+              "BorderSizePixel": 0,
+              "Text": "JOIN GRAND PRIX",
+              "TextColor3": { "Color3": [1, 1, 1] },
+              "Font": "GothamBold",
+              "TextSize": 13,
+              "AutoButtonColor": true,
+              "LayoutOrder": 5
+            },
+            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 12] } } },
+            "UIGradient": { "$className": "UIGradient", "$properties": { "Rotation": 90 } }
+          },
+          "GrandPrixTimerLabel": {
+            "$className": "TextLabel",
+            "$properties": {
+              "Size": { "UDim2": [[1, 0], [0, 22]] },
+              "BackgroundColor3": { "Color3": [0.12, 0.12, 0.16] },
+              "BackgroundTransparency": 0.25,
+              "BorderSizePixel": 0,
+              "Text": "NEXT GP --:--",
+              "TextColor3": { "Color3": [1, 1, 1] },
+              "Font": "Gotham",
+              "TextSize": 12,
+              "LayoutOrder": 6
+            },
+            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 8] } } }
           }
         },
 
@@ -408,7 +707,7 @@
                 "AnchorPoint": { "Vector2": [1, 0] },
                 "BackgroundColor3": { "Color3": [1, 0.41, 0.41] },
                 "BorderSizePixel": 0,
-                "Text": "✕",
+                "Text": "X",
                 "TextColor3": { "Color3": [1, 1, 1] },
                 "Font": "GothamBold",
                 "TextSize": 16,
@@ -442,11 +741,23 @@
                   "ZIndex": 52
                 },
                 "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } },
+                "Icon": {
+                  "$className": "ImageLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[0, 36], [0, 36]] },
+                    "Position": { "UDim2": [[0, 6], [0.5, 0]] },
+                    "AnchorPoint": { "Vector2": [0, 0.5] },
+                    "BackgroundTransparency": 1,
+                    "Image": "",
+                    "ZIndex": 53
+                  },
+                  "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 8] } } }
+                },
                 "NameLabel": {
                   "$className": "TextLabel",
                   "$properties": {
-                    "Size": { "UDim2": [[0.94, 0], [0.5, 0]] },
-                    "Position": { "UDim2": [[0.04, 0], [0.05, 0]] },
+                    "Size": { "UDim2": [[0.94, -50], [0.5, 0]] },
+                    "Position": { "UDim2": [[0.04, 50], [0.05, 0]] },
                     "BackgroundTransparency": 1,
                     "Text": "Skill Name",
                     "TextColor3": { "Color3": [1, 1, 1] },
@@ -459,8 +770,8 @@
                 "LevelLabel": {
                   "$className": "TextLabel",
                   "$properties": {
-                    "Size": { "UDim2": [[0.94, 0], [0.4, 0]] },
-                    "Position": { "UDim2": [[0.04, 0], [0.5, 0]] },
+                    "Size": { "UDim2": [[0.94, -50], [0.4, 0]] },
+                    "Position": { "UDim2": [[0.04, 50], [0.5, 0]] },
                     "BackgroundTransparency": 1,
                     "Text": "Level 1 / 10",
                     "TextColor3": { "Color3": [0.9, 0.95, 1] },
@@ -483,6 +794,7 @@
             "AnchorPoint": { "Vector2": [0.5, 0.5] },
             "BackgroundTransparency": 1
           },
+          "UISizeConstraint": { "$className": "UISizeConstraint", "$properties": { "MinSize": { "Vector2": [240, 46] } } },
           "ActionButton": {
             "$className": "TextButton",
             "$properties": {
@@ -511,6 +823,35 @@
                 "ZIndex": 6
               },
               "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 4] } } }
+            },
+            "Icon": {
+              "$className": "ImageLabel",
+              "$properties": {
+                "Size": { "UDim2": [[0, 34], [0, 34]] },
+                "Position": { "UDim2": [[0, 10], [0.5, 0]] },
+                "AnchorPoint": { "Vector2": [0, 0.5] },
+                "BackgroundTransparency": 1,
+                "Image": "",
+                "Visible": false,
+                "ZIndex": 7
+              },
+              "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 8] } } }
+            },
+            "SpellLabel": {
+              "$className": "TextLabel",
+              "$properties": {
+                "Size": { "UDim2": [[1, -62], [1, 0]] },
+                "Position": { "UDim2": [[0, 52], [0, 0]] },
+                "BackgroundTransparency": 1,
+                "Text": "",
+                "TextColor3": { "Color3": [1, 1, 1] },
+                "Font": "Gotham",
+                "TextSize": 16,
+                "TextXAlignment": "Left",
+                "TextTruncate": "AtEnd",
+                "Visible": false,
+                "ZIndex": 7
+              }
             }
           }
         },
@@ -518,15 +859,18 @@
         "BottomRight": {
           "$className": "Frame",
           "$properties": {
-            "Size": { "UDim2": [[0.13, 0], [0.32, 0]] },
-            "Position": { "UDim2": [[0.85, 0], [0.40, 0]] },
+            "Size": { "UDim2": [[0.17, 0], [0.42, 0]] },
+            "Position": { "UDim2": [[0.815, 0], [0.70, 0]] },
+            "AnchorPoint": { "Vector2": [0, 1] },
             "BackgroundTransparency": 1
           },
+          "UISizeConstraint": { "$className": "UISizeConstraint", "$properties": { "MinSize": { "Vector2": [170, 186] } } },
           "Skill1Button": {
             "$className": "TextButton",
             "$properties": {
-              "Size": { "UDim2": [[0.9, 0], [0.28, 0]] },
-              "Position": { "UDim2": [[0.05, 0], [0.02, 0]] },
+              "Size": { "UDim2": [[0.96, 0], [0.32, 0]] },
+              "Position": { "UDim2": [[0.5, 0], [0.17, 0]] },
+              "AnchorPoint": { "Vector2": [0.5, 0.5] },
               "BackgroundColor3": { "Color3": [0.30, 0.67, 0.97] },
               "BorderSizePixel": 0,
               "Text": "1",
@@ -536,8 +880,10 @@
               "TextWrapped": true,
               "AutoButtonColor": true
             },
-            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [1, 0] } } },
+            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 14] } } },
             "UIGradient": { "$className": "UIGradient", "$properties": { "Rotation": 90 } },
+            "UIAspectRatioConstraint": { "$className": "UIAspectRatioConstraint", "$properties": { "AspectRatio": 1, "DominantAxis": "Height" } },
+            "UISizeConstraint": { "$className": "UISizeConstraint", "$properties": { "MinSize": { "Vector2": [58, 58] } } },
             "CooldownFill": {
               "$className": "Frame",
               "$properties": {
@@ -550,13 +896,27 @@
                 "ZIndex": 6
               },
               "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 4] } } }
+            },
+            "Icon": {
+              "$className": "ImageLabel",
+              "$properties": {
+                "Size": { "UDim2": [[0.85, 0], [0.85, 0]] },
+                "Position": { "UDim2": [[0.5, 0], [0.5, 0]] },
+                "AnchorPoint": { "Vector2": [0.5, 0.5] },
+                "BackgroundTransparency": 1,
+                "Image": "",
+                "Visible": false,
+                "ZIndex": 7
+              },
+              "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } }
             }
           },
           "Skill2Button": {
             "$className": "TextButton",
             "$properties": {
-              "Size": { "UDim2": [[0.9, 0], [0.28, 0]] },
-              "Position": { "UDim2": [[0.05, 0], [0.36, 0]] },
+              "Size": { "UDim2": [[0.96, 0], [0.32, 0]] },
+              "Position": { "UDim2": [[0.5, 0], [0.50, 0]] },
+              "AnchorPoint": { "Vector2": [0.5, 0.5] },
               "BackgroundColor3": { "Color3": [0.70, 0.40, 1] },
               "BorderSizePixel": 0,
               "Text": "2",
@@ -566,8 +926,10 @@
               "TextWrapped": true,
               "AutoButtonColor": true
             },
-            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [1, 0] } } },
+            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 14] } } },
             "UIGradient": { "$className": "UIGradient", "$properties": { "Rotation": 90 } },
+            "UIAspectRatioConstraint": { "$className": "UIAspectRatioConstraint", "$properties": { "AspectRatio": 1, "DominantAxis": "Height" } },
+            "UISizeConstraint": { "$className": "UISizeConstraint", "$properties": { "MinSize": { "Vector2": [58, 58] } } },
             "CooldownFill": {
               "$className": "Frame",
               "$properties": {
@@ -580,13 +942,27 @@
                 "ZIndex": 6
               },
               "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 4] } } }
+            },
+            "Icon": {
+              "$className": "ImageLabel",
+              "$properties": {
+                "Size": { "UDim2": [[0.85, 0], [0.85, 0]] },
+                "Position": { "UDim2": [[0.5, 0], [0.5, 0]] },
+                "AnchorPoint": { "Vector2": [0.5, 0.5] },
+                "BackgroundTransparency": 1,
+                "Image": "",
+                "Visible": false,
+                "ZIndex": 7
+              },
+              "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } }
             }
           },
           "Skill3Button": {
             "$className": "TextButton",
             "$properties": {
-              "Size": { "UDim2": [[0.9, 0], [0.28, 0]] },
-              "Position": { "UDim2": [[0.05, 0], [0.70, 0]] },
+              "Size": { "UDim2": [[0.96, 0], [0.32, 0]] },
+              "Position": { "UDim2": [[0.5, 0], [0.83, 0]] },
+              "AnchorPoint": { "Vector2": [0.5, 0.5] },
               "BackgroundColor3": { "Color3": [0.30, 0.85, 0.39] },
               "BorderSizePixel": 0,
               "Text": "3",
@@ -596,8 +972,10 @@
               "TextWrapped": true,
               "AutoButtonColor": true
             },
-            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [1, 0] } } },
+            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 14] } } },
             "UIGradient": { "$className": "UIGradient", "$properties": { "Rotation": 90 } },
+            "UIAspectRatioConstraint": { "$className": "UIAspectRatioConstraint", "$properties": { "AspectRatio": 1, "DominantAxis": "Height" } },
+            "UISizeConstraint": { "$className": "UISizeConstraint", "$properties": { "MinSize": { "Vector2": [58, 58] } } },
             "CooldownFill": {
               "$className": "Frame",
               "$properties": {
@@ -610,6 +988,19 @@
                 "ZIndex": 6
               },
               "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 4] } } }
+            },
+            "Icon": {
+              "$className": "ImageLabel",
+              "$properties": {
+                "Size": { "UDim2": [[0.85, 0], [0.85, 0]] },
+                "Position": { "UDim2": [[0.5, 0], [0.5, 0]] },
+                "AnchorPoint": { "Vector2": [0.5, 0.5] },
+                "BackgroundTransparency": 1,
+                "Image": "",
+                "Visible": false,
+                "ZIndex": 7
+              },
+              "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } }
             }
           }
         },
@@ -661,7 +1052,7 @@
                 "AnchorPoint": { "Vector2": [1, 0] },
                 "BackgroundColor3": { "Color3": [1, 0.41, 0.41] },
                 "BorderSizePixel": 0,
-                "Text": "✕",
+                "Text": "X",
                 "TextColor3": { "Color3": [1, 1, 1] },
                 "Font": "GothamBold",
                 "TextSize": 16,
@@ -744,7 +1135,7 @@
                 "$properties": {
                   "Size": { "UDim2": [[1, 0], [0, 20]] },
                   "BackgroundTransparency": 1,
-                  "Text": "🪙 Gold: 0",
+                  "Text": "💰 Gold: 0",
                   "TextColor3": { "Color3": [1, 0.78, 0.17] },
                   "Font": "GothamBold",
                   "TextSize": 13,
@@ -834,7 +1225,7 @@
                 "AnchorPoint": { "Vector2": [1, 0] },
                 "BackgroundColor3": { "Color3": [1, 0.41, 0.41] },
                 "BorderSizePixel": 0,
-                "Text": "✕",
+                "Text": "X",
                 "TextColor3": { "Color3": [1, 1, 1] },
                 "Font": "GothamBold",
                 "TextSize": 16,
@@ -866,11 +1257,23 @@
                   "ZIndex": 52
                 },
                 "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } },
+                "Icon": {
+                  "$className": "ImageLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[0, 36], [0, 36]] },
+                    "Position": { "UDim2": [[0, 6], [0.5, 0]] },
+                    "AnchorPoint": { "Vector2": [0, 0.5] },
+                    "BackgroundTransparency": 1,
+                    "Image": "",
+                    "ZIndex": 53
+                  },
+                  "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 8] } } }
+                },
                 "NameLabel": {
                   "$className": "TextLabel",
                   "$properties": {
-                    "Size": { "UDim2": [[0.5, 0], [0.5, 0]] },
-                    "Position": { "UDim2": [[0.04, 0], [0.05, 0]] },
+                    "Size": { "UDim2": [[0.5, -50], [0.5, 0]] },
+                    "Position": { "UDim2": [[0.04, 50], [0.05, 0]] },
                     "BackgroundTransparency": 1,
                     "Text": "Skill Name",
                     "TextColor3": { "Color3": [0.18, 0.18, 0.25] },
@@ -883,8 +1286,8 @@
                 "LevelLabel": {
                   "$className": "TextLabel",
                   "$properties": {
-                    "Size": { "UDim2": [[0.5, 0], [0.4, 0]] },
-                    "Position": { "UDim2": [[0.04, 0], [0.5, 0]] },
+                    "Size": { "UDim2": [[0.5, -50], [0.4, 0]] },
+                    "Position": { "UDim2": [[0.04, 50], [0.5, 0]] },
                     "BackgroundTransparency": 1,
                     "Text": "Level 1 / 10",
                     "TextColor3": { "Color3": [0.45, 0.45, 0.55] },
@@ -902,7 +1305,7 @@
                     "AnchorPoint": { "Vector2": [1, 0.5] },
                     "BackgroundColor3": { "Color3": [0.30, 0.85, 0.39] },
                     "BorderSizePixel": 0,
-                    "Text": "🪙 100",
+                    "Text": "💰 100",
                     "TextColor3": { "Color3": [1, 1, 1] },
                     "Font": "GothamBold",
                     "TextSize": 14,
@@ -963,7 +1366,7 @@
                 "AnchorPoint": { "Vector2": [1, 0] },
                 "BackgroundColor3": { "Color3": [1, 0.41, 0.41] },
                 "BorderSizePixel": 0,
-                "Text": "✕",
+                "Text": "X",
                 "TextColor3": { "Color3": [1, 1, 1] },
                 "Font": "GothamBold",
                 "TextSize": 16,
@@ -991,7 +1394,7 @@
                   "Size": { "UDim2": [[1, 0], [0, 40]] },
                   "BackgroundColor3": { "Color3": [1, 0.78, 0.17] },
                   "BorderSizePixel": 0,
-                  "Text": "Gold Pack — Small",
+                  "Text": "",
                   "TextColor3": { "Color3": [1, 1, 1] },
                   "Font": "GothamBold",
                   "TextSize": 14,
@@ -999,7 +1402,34 @@
                   "LayoutOrder": 1,
                   "ZIndex": 52
                 },
-                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } }
+                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } },
+                "Icon": {
+                  "$className": "ImageLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[0, 30], [0, 30]] },
+                    "Position": { "UDim2": [[0, 6], [0.5, 0]] },
+                    "AnchorPoint": { "Vector2": [0, 0.5] },
+                    "BackgroundTransparency": 1,
+                    "Image": "rbxassetid://73429786426365",
+                    "ZIndex": 53
+                  },
+                  "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 6] } } }
+                },
+                "Label": {
+                  "$className": "TextLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[1, -58], [1, 0]] },
+                    "Position": { "UDim2": [[0, 48], [0, 0]] },
+                    "BackgroundTransparency": 1,
+                    "Text": "Gold Pack — Small",
+                    "TextColor3": { "Color3": [1, 1, 1] },
+                    "Font": "GothamBold",
+                    "TextSize": 14,
+                    "TextXAlignment": "Left",
+                    "TextTruncate": "AtEnd",
+                    "ZIndex": 53
+                  }
+                }
               },
               "GoldMediumButton": {
                 "$className": "TextButton",
@@ -1007,7 +1437,7 @@
                   "Size": { "UDim2": [[1, 0], [0, 40]] },
                   "BackgroundColor3": { "Color3": [1, 0.78, 0.17] },
                   "BorderSizePixel": 0,
-                  "Text": "Gold Pack — Medium",
+                  "Text": "",
                   "TextColor3": { "Color3": [1, 1, 1] },
                   "Font": "GothamBold",
                   "TextSize": 14,
@@ -1015,7 +1445,34 @@
                   "LayoutOrder": 2,
                   "ZIndex": 52
                 },
-                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } }
+                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } },
+                "Icon": {
+                  "$className": "ImageLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[0, 30], [0, 30]] },
+                    "Position": { "UDim2": [[0, 6], [0.5, 0]] },
+                    "AnchorPoint": { "Vector2": [0, 0.5] },
+                    "BackgroundTransparency": 1,
+                    "Image": "rbxassetid://131951544409493",
+                    "ZIndex": 53
+                  },
+                  "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 6] } } }
+                },
+                "Label": {
+                  "$className": "TextLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[1, -58], [1, 0]] },
+                    "Position": { "UDim2": [[0, 48], [0, 0]] },
+                    "BackgroundTransparency": 1,
+                    "Text": "Gold Pack — Medium",
+                    "TextColor3": { "Color3": [1, 1, 1] },
+                    "Font": "GothamBold",
+                    "TextSize": 14,
+                    "TextXAlignment": "Left",
+                    "TextTruncate": "AtEnd",
+                    "ZIndex": 53
+                  }
+                }
               },
               "GoldLargeButton": {
                 "$className": "TextButton",
@@ -1023,7 +1480,7 @@
                   "Size": { "UDim2": [[1, 0], [0, 40]] },
                   "BackgroundColor3": { "Color3": [1, 0.78, 0.17] },
                   "BorderSizePixel": 0,
-                  "Text": "Gold Pack — Large",
+                  "Text": "",
                   "TextColor3": { "Color3": [1, 1, 1] },
                   "Font": "GothamBold",
                   "TextSize": 14,
@@ -1031,7 +1488,34 @@
                   "LayoutOrder": 3,
                   "ZIndex": 52
                 },
-                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } }
+                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } },
+                "Icon": {
+                  "$className": "ImageLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[0, 30], [0, 30]] },
+                    "Position": { "UDim2": [[0, 6], [0.5, 0]] },
+                    "AnchorPoint": { "Vector2": [0, 0.5] },
+                    "BackgroundTransparency": 1,
+                    "Image": "rbxassetid://81581292129939",
+                    "ZIndex": 53
+                  },
+                  "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 6] } } }
+                },
+                "Label": {
+                  "$className": "TextLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[1, -58], [1, 0]] },
+                    "Position": { "UDim2": [[0, 48], [0, 0]] },
+                    "BackgroundTransparency": 1,
+                    "Text": "Gold Pack — Large",
+                    "TextColor3": { "Color3": [1, 1, 1] },
+                    "Font": "GothamBold",
+                    "TextSize": 14,
+                    "TextXAlignment": "Left",
+                    "TextTruncate": "AtEnd",
+                    "ZIndex": 53
+                  }
+                }
               },
               "FanBoostButton": {
                 "$className": "TextButton",
@@ -1039,7 +1523,7 @@
                   "Size": { "UDim2": [[1, 0], [0, 40]] },
                   "BackgroundColor3": { "Color3": [1, 0.41, 0.71] },
                   "BorderSizePixel": 0,
-                  "Text": "Fan Boost",
+                  "Text": "",
                   "TextColor3": { "Color3": [1, 1, 1] },
                   "Font": "GothamBold",
                   "TextSize": 14,
@@ -1047,7 +1531,34 @@
                   "LayoutOrder": 4,
                   "ZIndex": 52
                 },
-                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } }
+                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } },
+                "Icon": {
+                  "$className": "ImageLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[0, 30], [0, 30]] },
+                    "Position": { "UDim2": [[0, 6], [0.5, 0]] },
+                    "AnchorPoint": { "Vector2": [0, 0.5] },
+                    "BackgroundTransparency": 1,
+                    "Image": "rbxassetid://134101988537774",
+                    "ZIndex": 53
+                  },
+                  "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 6] } } }
+                },
+                "Label": {
+                  "$className": "TextLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[1, -58], [1, 0]] },
+                    "Position": { "UDim2": [[0, 48], [0, 0]] },
+                    "BackgroundTransparency": 1,
+                    "Text": "Fan Boost",
+                    "TextColor3": { "Color3": [1, 1, 1] },
+                    "Font": "GothamBold",
+                    "TextSize": 14,
+                    "TextXAlignment": "Left",
+                    "TextTruncate": "AtEnd",
+                    "ZIndex": 53
+                  }
+                }
               },
               "DoubleFansButton": {
                 "$className": "TextButton",
@@ -1055,7 +1566,7 @@
                   "Size": { "UDim2": [[1, 0], [0, 40]] },
                   "BackgroundColor3": { "Color3": [0.70, 0.40, 1] },
                   "BorderSizePixel": 0,
-                  "Text": "Rocket Fans and Gold (Game Pass)",
+                  "Text": "",
                   "TextColor3": { "Color3": [1, 1, 1] },
                   "Font": "GothamBold",
                   "TextSize": 14,
@@ -1063,7 +1574,155 @@
                   "LayoutOrder": 5,
                   "ZIndex": 52
                 },
-                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } }
+                "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 10] } } },
+                "Icon": {
+                  "$className": "ImageLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[0, 30], [0, 30]] },
+                    "Position": { "UDim2": [[0, 6], [0.5, 0]] },
+                    "AnchorPoint": { "Vector2": [0, 0.5] },
+                    "BackgroundTransparency": 1,
+                    "Image": "rbxassetid://120298261990946",
+                    "ZIndex": 53
+                  },
+                  "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 6] } } }
+                },
+                "Label": {
+                  "$className": "TextLabel",
+                  "$properties": {
+                    "Size": { "UDim2": [[1, -58], [1, 0]] },
+                    "Position": { "UDim2": [[0, 48], [0, 0]] },
+                    "BackgroundTransparency": 1,
+                    "Text": "Double Gain Fans and Gold",
+                    "TextColor3": { "Color3": [1, 1, 1] },
+                    "Font": "GothamBold",
+                    "TextSize": 14,
+                    "TextXAlignment": "Left",
+                    "TextTruncate": "AtEnd",
+                    "ZIndex": 53
+                  }
+                }
+              }
+            }
+          }
+        },
+
+        "EliminationPanel": {
+          "$className": "Frame",
+          "$properties": {
+            "Size": { "UDim2": [[1, 0], [1, 0]] },
+            "BackgroundColor3": { "Color3": [0, 0, 0] },
+            "BackgroundTransparency": 0.5,
+            "BorderSizePixel": 0,
+            "Active": true,
+            "Visible": false,
+            "ZIndex": 60
+          },
+          "Card": {
+            "$className": "Frame",
+            "$properties": {
+              "Size": { "UDim2": [[0.36, 0], [0.44, 0]] },
+              "Position": { "UDim2": [[0.5, 0], [0.5, 0]] },
+              "AnchorPoint": { "Vector2": [0.5, 0.5] },
+              "BackgroundColor3": { "Color3": [1, 1, 1] },
+              "BorderSizePixel": 0,
+              "Active": true,
+              "ZIndex": 61
+            },
+            "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 20] } } },
+            "UIStroke": { "$className": "UIStroke", "$properties": { "Color": { "Color3": [0.94, 0.30, 0.30] }, "Thickness": 3 } },
+            "TitleLabel": {
+              "$className": "TextLabel",
+              "$properties": {
+                "Size": { "UDim2": [[0.9, 0], [0.14, 0]] },
+                "Position": { "UDim2": [[0.05, 0], [0.06, 0]] },
+                "BackgroundTransparency": 1,
+                "Text": "ELIMINATED!",
+                "TextColor3": { "Color3": [0.70, 0.16, 0.16] },
+                "Font": "GothamBold",
+                "TextScaled": true,
+                "ZIndex": 62
+              }
+            },
+            "CountdownLabel": {
+              "$className": "TextLabel",
+              "$properties": {
+                "Size": { "UDim2": [[0.9, 0], [0.10, 0]] },
+                "Position": { "UDim2": [[0.05, 0], [0.22, 0]] },
+                "BackgroundTransparency": 1,
+                "Text": "Returning to Hub in 15s...",
+                "TextColor3": { "Color3": [0.35, 0.35, 0.45] },
+                "Font": "Gotham",
+                "TextScaled": true,
+                "ZIndex": 62
+              }
+            },
+            "RobuxButton": {
+              "$className": "TextButton",
+              "$properties": {
+                "Size": { "UDim2": [[0.9, 0], [0.16, 0]] },
+                "Position": { "UDim2": [[0.05, 0], [0.38, 0]] },
+                "BackgroundColor3": { "Color3": [0.70, 0.40, 1] },
+                "BorderSizePixel": 0,
+                "Text": "REVIVE — 30 ROBUX",
+                "TextColor3": { "Color3": [1, 1, 1] },
+                "Font": "GothamBold",
+                "TextScaled": true,
+                "AutoButtonColor": true,
+                "ZIndex": 62
+              },
+              "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 12] } } },
+              "Icon": {
+                "$className": "ImageLabel",
+                "$properties": {
+                  "Size": { "UDim2": [[0, 26], [0, 26]] },
+                  "Position": { "UDim2": [[0, 8], [0.5, 0]] },
+                  "AnchorPoint": { "Vector2": [0, 0.5] },
+                  "BackgroundTransparency": 1,
+                  "Image": "rbxassetid://137924809858708",
+                  "ZIndex": 63
+                }
+              }
+            },
+            "GoldButton": {
+              "$className": "TextButton",
+              "$properties": {
+                "Size": { "UDim2": [[0.9, 0], [0.16, 0]] },
+                "Position": { "UDim2": [[0.05, 0], [0.58, 0]] },
+                "BackgroundColor3": { "Color3": [1, 0.78, 0.17] },
+                "BorderSizePixel": 0,
+                "Text": "REVIVE — 100 GOLD",
+                "TextColor3": { "Color3": [1, 1, 1] },
+                "Font": "GothamBold",
+                "TextScaled": true,
+                "AutoButtonColor": true,
+                "ZIndex": 62
+              },
+              "UICorner": { "$className": "UICorner", "$properties": { "CornerRadius": { "UDim": [0, 12] } } },
+              "Icon": {
+                "$className": "ImageLabel",
+                "$properties": {
+                  "Size": { "UDim2": [[0, 26], [0, 26]] },
+                  "Position": { "UDim2": [[0, 8], [0.5, 0]] },
+                  "AnchorPoint": { "Vector2": [0, 0.5] },
+                  "BackgroundTransparency": 1,
+                  "Image": "rbxassetid://137924809858708",
+                  "ZIndex": 63
+                }
+              }
+            },
+            "SkipLabel": {
+              "$className": "TextLabel",
+              "$properties": {
+                "Size": { "UDim2": [[0.9, 0], [0.14, 0]] },
+                "Position": { "UDim2": [[0.05, 0], [0.80, 0]] },
+                "BackgroundTransparency": 1,
+                "Text": "No purchase? You'll return to the Commercial Hub.",
+                "TextColor3": { "Color3": [0.55, 0.55, 0.60] },
+                "Font": "Gotham",
+                "TextScaled": true,
+                "TextWrapped": true,
+                "ZIndex": 62
               }
             }
           }

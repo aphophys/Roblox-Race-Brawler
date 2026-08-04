@@ -29,13 +29,24 @@ local Players = game:GetService("Players")
 
 local FanBoxGenerator = require(script.Parent:WaitForChild("FanBoxGenerator"))
 local FanBoxCrowdTemplates = require(script.Parent:WaitForChild("FanBoxCrowdTemplates"))
+local FanBoxRecordsBoard = require(script.Parent:WaitForChild("FanBoxRecordsBoard"))
 
 local DEFAULT_TIER_INDEX = 1 -- "Empty" — what a pod resets to when released
 
 local FanBoxSlotManager = {}
 
 local slotIndexByPlayer: { [Player]: number } = {}
-local tierConnectionByPlayer: { [Player]: RBXScriptConnection } = {}
+-- A LIST per player, not a single connection: the pod now reacts to four
+-- attributes rather than one (the records board shows gold, laps and best lap
+-- alongside fans). Storing one connection and overwriting it would silently
+-- leak the previous three.
+local podConnectionsByPlayer: { [Player]: { RBXScriptConnection } } = {}
+
+-- Everything the pod's crowd size or records board is derived from. All four
+-- are already mirrored onto the Player by ProfileManager.SyncAttributes, so
+-- these listeners fire off the signal the rest of the game is already
+-- producing rather than adding a poll.
+local POD_ATTRIBUTES = { "TotalFans", "Gold", "TotalLapsCompleted", "BestLapTimeMs" }
 
 local function getFanBoxFolder() : Folder?
 	return workspace:FindFirstChild("FanBoxes") :: Folder?
@@ -45,6 +56,11 @@ local function updatePodTierForPlayer(player: Player, pod: Instance)
 	local fanCount = (player:GetAttribute("TotalFans") :: number?) or 0
 	local tierIndex = FanBoxCrowdTemplates.GetTierIndexForFanCount(fanCount)
 	FanBoxGenerator.SwapPodTier(pod :: Model, tierIndex)
+	-- Redrawn AFTER the tier swap, not before: SwapPodTier rebuilds the pod's
+	-- crowd mesh, and the board is re-attached by Render if that pass removed
+	-- it. Also means the numbers on the board and the size of the crowd
+	-- standing next to them always change in the same frame.
+	FanBoxRecordsBoard.Render(pod :: Model, player)
 end
 
 function FanBoxSlotManager.AssignSlot(player: Player) : number?
@@ -61,9 +77,13 @@ function FanBoxSlotManager.AssignSlot(player: Player) : number?
 				updatePodTierForPlayer(player, pod)
 				slotIndexByPlayer[player] = slotIndex
 
-				tierConnectionByPlayer[player] = player:GetAttributeChangedSignal("TotalFans"):Connect(function()
-					updatePodTierForPlayer(player, pod)
-				end)
+				local connections: { RBXScriptConnection } = {}
+				for _, attributeName in POD_ATTRIBUTES do
+					table.insert(connections, player:GetAttributeChangedSignal(attributeName):Connect(function()
+						updatePodTierForPlayer(player, pod)
+					end))
+				end
+				podConnectionsByPlayer[player] = connections
 
 				return slotIndex
 			end
@@ -79,16 +99,19 @@ function FanBoxSlotManager.ReleaseSlot(player: Player)
 		return
 	end
 
-	local connection = tierConnectionByPlayer[player]
-	if connection ~= nil then
-		connection:Disconnect()
-		tierConnectionByPlayer[player] = nil
+	local connections = podConnectionsByPlayer[player]
+	if connections ~= nil then
+		for _, connection in connections do
+			connection:Disconnect()
+		end
+		podConnectionsByPlayer[player] = nil
 	end
 
 	local fanBoxFolder = getFanBoxFolder()
 	local occupiedPod = fanBoxFolder and fanBoxFolder:FindFirstChild(player.Name)
 	if occupiedPod ~= nil then
 		FanBoxGenerator.SwapPodTier(occupiedPod :: Model, DEFAULT_TIER_INDEX)
+		FanBoxRecordsBoard.Clear(occupiedPod :: Model)
 		occupiedPod.Name = `__EmptySlot_{slotIndex}`
 	end
 

@@ -13,6 +13,8 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SkillEffects = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("SkillEffects"))
+local Network = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"))
+local VisualEffectsService = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("VisualEffectsService"))
 
 export type EffectSource = "Global" | "Target" | "Self"
 
@@ -58,18 +60,42 @@ local function purgeExpired(player: Player)
 	end
 end
 
+-- Control scrambles are the one effect kind whose actual behaviour lives on
+-- the client and runs off its own clock, so removing an entry from the list
+-- here is NOT enough to stop it — without this, a Dispel (or the cap+1
+-- immunity sweep below) would strip Reverse Control server-side while the
+-- player's inputs stayed inverted for the rest of the original duration.
+-- A duration of 0 is the agreed cancel signal; the client treats any
+-- non-positive duration as "clear this mode now".
+local function notifyControlEffectCleared(player: Player, effectId: string)
+	local definition = SkillEffects.Catalog[effectId]
+	if definition ~= nil and definition.IsControlScramble and definition.ControlScrambleMode ~= nil then
+		Network.Combat.ApplyControlEffect:FireClient(player, definition.ControlScrambleMode, 0)
+	end
+	-- Duration 0 = "this one ended ahead of schedule", so the client can drop
+	-- its row instead of running the timer down to a number that is already
+	-- wrong. Only EARLY clears need this; ordinary expiry needs no message
+	-- because the client was told the duration when it started.
+	Network.Combat.ActiveEffectChanged:FireClient(player, effectId, 0)
+end
+
 local function isImmune(player: Player, polarity: SkillEffects.EffectPolarity) : boolean
 	local immunity = immunityByPlayer[player]
 	return immunity ~= nil and immunity[polarity] > os.clock()
 end
 
-local function grantImmunity(player: Player, polarity: SkillEffects.EffectPolarity)
+-- `durationSeconds` defaults to the shared StackingRules.ImmunityDurationSeconds
+-- (the incidental "4th same-polarity application" rule below) — a
+-- deliberately-cast immunity skill (ShieldSelf/PhaseSelf) instead passes its
+-- own level-scaled EffectDurationSeconds, so leveling the skill actually
+-- extends the protection window.
+local function grantImmunity(player: Player, polarity: SkillEffects.EffectPolarity, durationSeconds: number?)
 	local immunity = immunityByPlayer[player]
 	if immunity == nil then
 		immunity = { Good = 0, Bad = 0 }
 		immunityByPlayer[player] = immunity
 	end
-	immunity[polarity] = os.clock() + SkillEffects.StackingRules.ImmunityDurationSeconds
+	immunity[polarity] = os.clock() + (durationSeconds or SkillEffects.StackingRules.ImmunityDurationSeconds)
 end
 
 -- Attempts to apply `effectId` to `player`. Returns false if rejected
@@ -98,6 +124,21 @@ function EffectStackManager.TryApplyEffect(
 		return false
 	end
 
+	-- ShieldSelf/PhaseSelf (CONFIRMED this was never wired up before now —
+	-- GrantsImmunity was declared on both but nothing ever read it, so
+	-- casting either did nothing protective at all): instead of sitting in
+	-- the active-effects list as an inert Good entry, actually grant "Bad"
+	-- immunity for the skill's own (level-scaled) duration. This is what
+	-- makes casting Shield before a Global debuff — including a Global
+	-- debuff the shielded player casts on themselves, since Global skills
+	-- deliberately still hit their own caster — correctly protect them:
+	-- TryApplyEffect's isImmune check above runs for every recipient,
+	-- caster included, before this function ever inserts anything.
+	if effectDefinition.GrantsImmunity then
+		grantImmunity(player, "Bad", durationSeconds)
+		return true
+	end
+
 	purgeExpired(player)
 	local list = getOrCreateList(player)
 
@@ -120,6 +161,7 @@ function EffectStackManager.TryApplyEffect(
 		for i = #list, 1, -1 do
 			local instanceDefinition = SkillEffects.Catalog[list[i].EffectId]
 			if instanceDefinition ~= nil and instanceDefinition.Polarity == polarity then
+				notifyControlEffectCleared(player, list[i].EffectId)
 				table.remove(list, i)
 			end
 		end
@@ -138,6 +180,36 @@ function EffectStackManager.TryApplyEffect(
 		Magnitude = magnitude,
 		ExpiresAt = os.clock() + durationSeconds,
 	})
+
+	-- Only once the effect has actually been ACCEPTED — every early return
+	-- above (unknown effect, immune, cap reached) is a case where the player
+	-- must not light up, or the aura would advertise a debuff that never
+	-- landed.
+	local character = player.Character
+	if character ~= nil then
+		VisualEffectsService.ShowEffectAura(character, durationSeconds, polarity == "Good")
+	end
+
+	-- Control scrambles are inherently client-side: they change what the
+	-- player's own input does, and the server has no input to change. This is
+	-- the single place that tells the affected client, for exactly the same
+	-- reason as the aura above — it is the one point where an effect is known
+	-- to have genuinely landed, and it is shared by the Target, Global and
+	-- Self cast paths.
+	--
+	-- It previously lived in TargetedSkillManager and only handled "Blind",
+	-- which is why ScrambleGlobal (a Global cast, so it never went through
+	-- that manager) did nothing to anyone's controls.
+	if effectDefinition.IsControlScramble and effectDefinition.ControlScrambleMode ~= nil then
+		Network.Combat.ApplyControlEffect:FireClient(player, effectDefinition.ControlScrambleMode, durationSeconds)
+	end
+
+	-- Tells the client's effect timer that this landed and for how long. One
+	-- message per accepted effect — the countdown itself is the client's job,
+	-- and nothing is sent on normal expiry because the client already knows
+	-- when that is. Sent for EVERY effect, including the stat-only ones the
+	-- client is otherwise never told about at all.
+	Network.Combat.ActiveEffectChanged:FireClient(player, effectId, durationSeconds)
 
 	return true
 end
@@ -231,6 +303,7 @@ function EffectStackManager.Dispel(mode: "Offensive" | "Defensive", count: numbe
 		end
 		local definition = SkillEffects.Catalog[list[i].EffectId]
 		if definition ~= nil and definition.Polarity == targetPolarity then
+			notifyControlEffectCleared(victim, list[i].EffectId)
 			table.remove(list, i)
 			removedCount += 1
 		end
