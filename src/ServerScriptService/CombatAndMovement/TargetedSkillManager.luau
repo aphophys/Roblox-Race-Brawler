@@ -28,6 +28,7 @@ local EffectStackManager = require(script.Parent:WaitForChild("EffectStackManage
 local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
 
 local ProfileManager = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("ProfileManager"))
+local SkillRewardService = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("SkillRewardService"))
 local SoundDirector = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("SoundDirector"))
 local VisualEffectsService = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("VisualEffectsService"))
 
@@ -195,6 +196,12 @@ local function resolveAndApply(caster: Player, skillId: string, skillDefinition:
 	if target ~= caster then
 		Network.Track.ShowNotification:FireClient(caster, `🎯 YOU CAST {skillName} ON {target.DisplayName}`)
 	end
+
+	-- Only reached once the effect has actually LANDED on a target — past the
+	-- range check, the wind-up and the projectile's flight, any of which can
+	-- return early. A cast that fizzles pays nothing, which is why this is at
+	-- the bottom of the resolve and not up beside the cooldown consumption.
+	SkillRewardService.GrantCastReward(caster, skillDefinition.CastType)
 end
 
 local function tryCast(caster: Player, skillId: string)

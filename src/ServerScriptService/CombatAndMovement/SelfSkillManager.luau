@@ -30,6 +30,7 @@ local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateServic
 local MovementModifier = require(script.Parent:WaitForChild("MovementModifier"))
 
 local ProfileManager = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("ProfileManager"))
+local SkillRewardService = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("SkillRewardService"))
 local SoundDirector = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("SoundDirector"))
 local VisualEffectsService = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("VisualEffectsService"))
 
@@ -264,6 +265,10 @@ local function resolveAndApply(caster: Player, skillId: string, skillDefinition:
 	end
 
 	Network.Track.ShowNotification:FireClient(caster, skillDefinition.ActivationNoticeText)
+
+	-- The effect is on the caster, so the cast succeeded. Shared by tryCast and
+	-- CastSkillDirect, so a pickup pays the same as an owned skill.
+	SkillRewardService.GrantCastReward(caster, skillDefinition.CastType)
 end
 
 local function tryCast(caster: Player, skillId: string)

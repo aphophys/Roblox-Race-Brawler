@@ -94,6 +94,130 @@ by the same write.
   they show, so they update off a signal that is already firing.
 
 
+**Chunk 84 (2026-08-06) — VERSION 1. Boundary exploit fixed, skill curves
+retuned, cast rewards added, Grand Prix to a 12-minute cadence. Stress tested
+and live-verified. Nothing committed.**
+
+**1. THE BOUNDARY EXPLOIT — players ran the whole lap outside the track.**
+Reported from play: "able to walk outside the track and on the walls, rendering
+all obstacles obsolete." Both halves were real and both are fixed in
+`TrackBoundaryMonitor`.
+
+- **The legal corridor was 13 studs wider than the road.** `ON_TRACK_MARGIN`
+  was `SegmentWidth/2 + BarrierThickness + 10` = 49 against a road half-width
+  of 36. Measured against the real sample cloud, the true allowance ran 44-49
+  studs depending where you stood.
+- **That corridor became walkable when TerrainGroundBuilder landed.** Raycast
+  live: ground outside the wall is Terrain at **Y = 0.02 against a road top of
+  Y = 1.00** — a one-stud step down onto a flat, hazard-free apron running the
+  whole lap, 320 studs deep. Before terrain existed, hopping the barrier
+  dropped you to the Baseplate at -47, past `FALL_OUT_Y_THRESHOLD`, and cost a
+  life. Terrain silently removed the consequence. **This is the general
+  lesson: adding scenery can delete a rule that was being enforced by the
+  absence of scenery.**
+- **Barrier tops were legal too** — 37.5 lateral is inside a 49 margin and 10
+  studs up is far under `MAX_HEIGHT_ABOVE_TRACK`, so the wall was a catwalk
+  over every hazard.
+
+Three changes, and the first is what makes the second possible:
+
+1. **Lateral distance is now measured to the centreline RUN each sample stands
+   for, not to the sample POINT** — in the sample's own frame, so it comes out
+   as true lateral offset. The old nearest-point measure was wrong by up to
+   17.7 studs on a curve (samples are 30 studs apart on a straight, 35.3 on a
+   curve), and *that error is what the +10 slack was paying for*. Swept every
+   point of every road slab: worst reading anywhere is **36.000**, exact.
+2. **`ON_TRACK_MARGIN` = `SegmentWidth/2 + BarrierThickness` = 39.** The
+   barrier is the boundary. No tolerance on top on purpose — this is a
+   brawler, players shove each other into the wall, and those 3 studs ARE the
+   shove allowance (a racer pinned against the wall reads ~35).
+3. **A downward ray identifies the wall top.** 37.5 is inside the margin by
+   design, so distance alone cannot catch it; tightening the margin instead
+   would charge a life for being body-checked. `RespectCanCollide` so
+   SkyRail's non-collidable railings cannot mask it.
+
+The two branches now ask different questions: a racer must be on a legal
+racing surface (`onTrack`), a lobby player merely has to be out of the track's
+space (`withinTrackBounds`) — so perching on the wall still bounces them.
+
+Live-verified: apron at 44 lateral violated in 0.53s, barrier top in 0.67s,
+and straight / mid-chord / **chord-join** outer road edges all held 4 ticks
+with no life lost. The chord-join row is the regression guard — it is the
+geometry the old measure read worst, and tightening the margin without fixing
+the distance measure would have started charging lives to anyone taking a
+curve on the outside line.
+
+**Test-method trap worth keeping:** the first run anchored the root part on the
+CLIENT and moved it. A client's CFrame writes to an ANCHORED part do not
+replicate, so the server — which is what the monitor reads — never saw those
+positions and the tests measured nothing. Hold a character with a per-frame
+CFrame write on an UNANCHORED part instead (same approach as `pushPlayer`).
+
+**2. Skill curves retuned (user-specified values).** `GOLD_COST_MULTIPLIER`
+10 -> 1 and `DURATION_MULTIPLIER` 4 -> 1, so gold prices and durations are now
+literally what each skill's curve params say. Per-skill bases/steps set for 16
+skills. `COOLDOWN_MULTIPLIER` (2) and `MAGNITUDE_EXAGGERATION_MULTIPLIER` (2)
+are unchanged — **the pass is no longer uniform, read each constant.**
+
+**ShockTarget had no strength progression at all** and was the one real defect
+found: `BaseMagnitude = 0.15` computes to **-0.7** through
+`1 + (raw - 1) * 2`, a negative stat multiplier, so all ten levels were
+rescued by the 0.05 floor clamp and were identical. `BaseMagnitude = 0.6`
+gives 0.20 -> 0.05, real progression, and makes Shock the stronger debuff at
+**9 of 10 levels** against SlowTarget (was 0). They tie at L10 where both
+floor; closing that needs Slow's curve or the shared floor to move.
+
+**3. Fan reward for a successful skill cast** — Self 1 / Target 2 / Global 4,
+in `EconomyRates.SkillCastFanRewards` keyed by `CastType` so the lookup cannot
+drift from `SkillTrees`. New `EconomyAndData/SkillRewardService`. **"Success"
+is defined per manager and the placement is the whole point:** the call sits at
+the BOTTOM of each manager's shared resolve, past every early return — so a
+Target cast into empty space pays nothing ("NO TARGET IN RANGE!" is not a
+cast), and because it is the *shared* resolve, a pickup cast pays the same as
+an owned one. DoubleFans applies, matching every other fan payout.
+
+**4. Grand Prix cadence 30 -> 12 minutes**, race limit 5 -> 4 minutes. 12
+divides an hour, so the wall-clock marks stay clean: **:00 :12 :24 :36 :48**.
+Tutorial card 5 and ten stale code comments updated to match.
+
+**5. STRESS TEST — cycle and regeneration both clean.** Two full cycles via
+the real `GrandPrixStateChanged` broadcast, payout exactly the documented
++3300 gold / +1650 fans. (A 1.2s second race is CORRECT, not a bug: the roster
+empties at payout, so with no entrants it ends on "nobody left standing".) 26
+regenerations: Hub **4** and FanBoxes **61** every sample, memory plateaus flat
+at ~1916MB over a 24s idle window — no leak, same conclusion as chunk 83.
+
+**Two baseline numbers in this file are now stale and were re-measured:**
+- **Track parts by theme** (whole oval): NeonCircuit 116, Classic 128, SkyRail
+  236, WaterDock 240, Volcanic 284, IceFrost 444, Desert 500, **HillMud 1148**
+  — 3.6x the 316 max recorded in chunk 83, from the difficulty pass.
+- **Loose workspace parts are no longer a constant 3.** They oscillate 3-17
+  under rapid regeneration and settle back — transient hazard debris parented
+  to `workspace` rather than to the Track model, so it survives a regeneration
+  and relies on its own timer. Harmless live (one regeneration per race).
+- Frame time 16.66 -> 17.5-19ms mean (same Studio setup, 1 player). It tracks
+  **moving primitives, not part count** — NeonCircuit at 116 parts measured
+  slower than HillMud at 1148, having 188 unanchored parts to HillMud's 107.
+
+**6. 50-racer analysis — script CPU is NOT the bottleneck.** At 50 players:
+`ZoneHazardMonitor` 3.06 ms/s (its 50 x 72 zones is the only super-linear
+loop), `TrackBoundaryMonitor` 2.18 ms/s. ~5ms out of 1000. DataStore ~20% of
+budget. `StreamingEnabled` is **true**, which removes the naive "1148 parts x
+every client" concern. The unmeasurable-from-one-client risk is density: all
+racers inside ~70 studs at the start grid, and the Hub between races.
+
+**OPEN DEFECT — the start grid breaks at slot 41.** `startGridOffset` steps
+straight back along +Z, but what sits behind the start line is segment 8, a
+CURVE, so the straight grid diverges from the curved road. Verified all 40
+slots: **no violation at 40**, but slot 36 sits at 36.40 — 0.4 studs past the
+road edge, clipping the barrier band (physics nudges them back in, cosmetic).
+Slot 41 measures 39.31 and slot 46 measures 43.20, both past the margin — an
+off-road spawn and a life lost before the flag drops. Safe at 40, broken at
+41, and **`Players.MaxPlayers` reads 60 in the place file.** Fix is to walk
+the sample chain so the grid follows the curve, or cap rows at 8. Note the
+interaction: under the old 49 margin those slots passed, so the boundary fix
+is what makes this live.
+
 **Chunk 82 (2026-08-04) — Grand Prix moved onto real-world wall-clock time.
 Live-verified end to end.**
 
@@ -1280,5 +1404,6 @@ colored block standing in for that (explicitly flagged as a placeholder in
 - **Roblox Studio MCP tools (execute_luau, inspect_instance, screen_capture, start_stop_play, script_grep/read/search, search_game_tree) became available this round — a real capability shift, not just another tool.** Every prior round's bug fixes for this project were written blind (code reasoning only, no way to see the actual running game) and handed to the user to playtest and report back — which is why the fan-box float bug survived 3 full rounds of plausible-but-wrong guesses. With these tools, ALWAYS verify a fix empirically before reporting it done: start Play, inspect real instance state (`workspace`/`ReplicatedStorage` traversal), trigger the REAL code path (not a reimplementation), and `screen_capture` the visual result. Don't fall back to blind code review as the default now that live verification is possible.
 - **`execute_luau`'s `require()` does not share Luau's module cache with the actual running server/client scripts.** Calling `require(SomeModuleScript)` from an `execute_luau` session creates a fresh, independently-initialized copy of that module — its own upvalues, its own `nil` state for anything only set up via an `Init()`/`BuildAll()`-style function the live game already called once at startup. This produced several confusing false-negative results mid-investigation this round (a module that clearly worked, per direct instance inspection, appeared broken when re-required and called directly). To verify real game state via `execute_luau`: read live instance properties directly (no `require`), or trigger the real path indirectly (e.g. `player:SetAttribute(...)` + `task.wait()`, letting an already-connected live listener handle it) — never trust a freshly-`require`'d copy's behavior to represent the live game's actual state.
 - **When a size/count/spacing requirement has TWO independent-looking drivers (e.g. "fit a target width" AND "guarantee a minimum count"), derive them TOGETHER, not one as a fallback bolted onto the other.** Scaling pod COUNT up to satisfy a capacity minimum while leaving the pod WIDTH fixed produced physically overlapping geometry — obvious in hindsight, easy to miss in code review, caught only by live measurement. The fix was picking the count first (`max(natural-fit count, required count)`) and then deriving width FROM that chosen count and the fixed total space (`totalSpace / count`) — a single formula with one degree of freedom, not two independently-tuned numbers that can silently drift out of consistency with each other.
+- **An ongoing segment-by-segment difficulty pass has its own working doc: `SEGMENT_DIFFICULTY_PASS.md`.** It holds the agreed per-segment process (reuse existing hazards; force the segment onto the map; move the player and WAIT for the user's command; test via the official join route; wait for the user's confirmation before the next segment), the 16 theme x piece-type variant catalog, the forced-segment harness recipe, and the log of a first attempt at Classic that was reverted in full. Read it before touching `ThemeHazardBuilder` or `TrackGenerator` for difficulty work.
 - Nothing in this project is committed to git yet. Commit only when the user explicitly asks.
 - Use the `progress-tracker` subagent (`.claude/agents/progress-tracker.md`) to resume/update this file — confirm it's available via the Agent tool at the start of a fresh session before relying on it.

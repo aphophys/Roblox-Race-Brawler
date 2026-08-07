@@ -43,6 +43,7 @@
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local TrackBlueprints = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("TrackBlueprints"))
 local TrackGeometry = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("TrackGeometry"))
 local TrackThemes = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("TrackThemes"))
@@ -64,6 +65,61 @@ local SEGMENT_PAIRS = { { 1, 2 }, { 3, 4 }, { 5, 6 }, { 7, 8 } }
 
 local TrackGenerator = {}
 
+-- Pins each segment pair to a chosen theme instead of drawing at random.
+-- nil (the shipping state) means "draw at random", so this costs nothing when
+-- unused — it exists so a specific theme's straight AND curve can be put on the
+-- oval on demand while a server is live, which is the only way to inspect or
+-- tune one segment's hazards without regenerating until chance hands you the
+-- theme you wanted. Set it, call Regenerate(), walk the segment.
+local forcedPairThemeIds: { string }? = nil
+
+-- Attribute the LIVE server watches to drive the override. Set it to a
+-- comma-separated list of 4 theme ids (or clear it for random draws) and this
+-- module regenerates the oval itself.
+--
+-- ## Why an attribute and not just calling SetForcedPairThemes from outside
+--
+-- Because calling in from a Studio command bar / MCP `execute_luau` session does
+-- NOT reach this module. That context has its own require cache, so
+-- `require(TrackGenerator)` there returns a whole FRESH copy of the dependency
+-- graph — TrackGenerator, ThemeHazardBuilder, ZoneHazardMonitor,
+-- PlayerStateService, all of them. Regenerate() called on that copy really does
+-- build a real track into the real workspace, so it looks like it worked. But
+-- every hazard it builds closes over the PHANTOM ZoneHazardMonitor, whose
+-- PlayerStateService never saw the live EnterTrack — so those hazards read every
+-- player as InLobby and can never take a life, and their zones are registered
+-- with a monitor whose polling loop was never started.
+--
+-- That cost most of two sessions: the falling blocks were fine the whole time
+-- and the test rig was spawning ghosts. Proven with module identities printed
+-- from both sides — ArcadeManager saw table 0xabfc..., the block's own handler
+-- saw table 0x3a65....
+--
+-- Setting an attribute crosses the boundary as DATA, so the reaction happens
+-- inside the live server and everything it builds is wired to the live modules.
+local FORCED_THEMES_ATTRIBUTE = "DevForcedPairThemes"
+
+-- `themeIds` is one TrackThemes id per SEGMENT_PAIRS entry (4). Pass nil to go
+-- back to random draws. Asserts rather than silently falling back: a typo'd
+-- theme id that quietly regenerated a random track would look like the override
+-- not working at all.
+function TrackGenerator.SetForcedPairThemes(themeIds: { string }?)
+	if themeIds == nil then
+		forcedPairThemeIds = nil
+		return
+	end
+
+	assert(
+		#themeIds == #SEGMENT_PAIRS,
+		`TrackGenerator.SetForcedPairThemes: expected {#SEGMENT_PAIRS} theme ids (one per segment pair), got {#themeIds}`
+	)
+	for _, themeId in themeIds do
+		assert(TrackThemes[themeId] ~= nil, `TrackGenerator.SetForcedPairThemes: "{themeId}" is not a TrackThemes id`)
+	end
+
+	forcedPairThemeIds = table.clone(themeIds)
+end
+
 -- Picks THEME_COUNT distinct themes from the full TrackThemes pool and gives
 -- one to each of the oval's 4 segment pairs. Returns a lookup from
 -- SegmentIndex (1-8) to the TrackTheme for that segment.
@@ -82,6 +138,10 @@ local function pickOvalSegmentThemes() : { [number]: TrackThemes.TrackTheme }
 	local chosenThemeIds: { string } = {}
 	for i = 1, themeCount do
 		table.insert(chosenThemeIds, allThemeIds[i])
+	end
+
+	if forcedPairThemeIds ~= nil then
+		chosenThemeIds = forcedPairThemeIds
 	end
 
 	local segmentThemes: { [number]: TrackThemes.TrackTheme } = {}
@@ -279,10 +339,40 @@ local function fitLegacyBaseplate()
 	baseplate.CFrame = CFrame.new(groundCFrame.Position.X, BASEPLATE_SAFETY_Y, groundCFrame.Position.Z)
 end
 
+-- Applies whatever FORCED_THEMES_ATTRIBUTE currently says and rebuilds. Studio
+-- only: this is a development inspection aid, and a live game should never have
+-- its layout driven by a workspace attribute.
+local function applyForcedThemesAttribute()
+	local raw = workspace:GetAttribute(FORCED_THEMES_ATTRIBUTE)
+
+	if raw == nil or raw == "" then
+		TrackGenerator.SetForcedPairThemes(nil)
+	else
+		local themeIds: { string } = {}
+		for id in tostring(raw):gmatch("[^,%s]+") do
+			table.insert(themeIds, id)
+		end
+		-- A single id is shorthand for "put this theme on the whole oval", which
+		-- is what inspecting one theme's straight AND curve at once needs.
+		if #themeIds == 1 then
+			for _ = 2, #SEGMENT_PAIRS do
+				table.insert(themeIds, themeIds[1])
+			end
+		end
+		TrackGenerator.SetForcedPairThemes(themeIds)
+	end
+
+	TrackGenerator.Regenerate(workspace)
+end
+
 function TrackGenerator.Init()
 	fitLegacyBaseplate()
 	TrackPieceTemplates.BuildAll()
 	TrackGenerator.GenerateOval(workspace)
+
+	if RunService:IsStudio() then
+		workspace:GetAttributeChangedSignal(FORCED_THEMES_ATTRIBUTE):Connect(applyForcedThemesAttribute)
+	end
 end
 
 return TrackGenerator

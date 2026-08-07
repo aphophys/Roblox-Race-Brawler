@@ -16,6 +16,15 @@ export type PlacementReward = {
 	Fans: number,
 }
 
+-- Keyed by SkillTrees.SkillCastType. Spelled out as its own type rather than
+-- { [string]: number } so a typo in a key is a type error here rather than a
+-- silent nil (and therefore a silently unpaid) reward at the call site.
+export type SkillCastFanRewardTable = {
+	Self: number,
+	Target: number,
+	Global: number,
+}
+
 export type EconomyRatesType = {
 	FanDepositGoldPerFan: number,
 	FanDepositBonusThreshold: number,
@@ -27,6 +36,17 @@ export type EconomyRatesType = {
 	-- purpose: it exists so progress feels continuous rather than arriving in
 	-- one lump at the finish line.
 	CheckpointFanReward: number,
+
+	-- Fans paid to the CASTER for a skill that successfully goes off, keyed by
+	-- the skill's own CastType so the lookup cannot drift out of step with
+	-- SkillTrees (SkillDefinition.CastType is exactly these three strings).
+	--
+	-- Scaled by how much of the field the cast reaches, not by how hard it is
+	-- to land: a Self buff helps one racer, a Target debuff has to be aimed at
+	-- somebody and lands on two people's races, and a Global hits everyone
+	-- still running. Paid by SkillRewardService, which is also where "success"
+	-- is defined per cast type — see its docstring.
+	SkillCastFanRewards: SkillCastFanRewardTable,
 
 	-- Passive income: every FanIncomeIntervalSeconds, each player earns
 	-- FanIncomeGoldPerFan gold for each fan they hold. Fans are the long-term
@@ -105,6 +125,12 @@ local EconomyRates: EconomyRatesType = {
 	LapCompletionGoldReward = 10,
 	LapCompletionFanReward = 5,
 	CheckpointFanReward = 2,
+
+	SkillCastFanRewards = {
+		Self = 1,
+		Target = 2, -- the offensive skills: everything you aim at another racer
+		Global = 4,
+	},
 
 	FanIncomeGoldPerFan = 0.02,
 	FanIncomeIntervalSeconds = 300,

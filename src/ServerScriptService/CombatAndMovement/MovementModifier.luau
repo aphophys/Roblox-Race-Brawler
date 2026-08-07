@@ -15,6 +15,36 @@ local BASE_WALK_SPEED = 16
 local BASE_JUMP_POWER = 50
 local RECOMPUTE_INTERVAL_SECONDS = 0.25
 
+-- ===== Jumping while swimming =====
+--
+-- Roblox lets a swimmer jump, and in open water that reads as hopping rather
+-- than swimming — on a pool short enough it lets a racer skip the swim entirely,
+-- which is the whole hazard bypassed. So while actually in the Swimming state,
+-- jump is cut to almost nothing.
+--
+-- "Almost" and not zero, and only at the edge, because a swimmer with no jump at
+-- all CANNOT CLIMB OUT: Roblox needs a jump to mount the lip of a pool, so a flat
+-- zero traps players in the water for good. Within SWIM_EDGE_REACH_STUDS of the
+-- road at either END of a pool, full jump is restored — exactly where getting out
+-- is the point, and nowhere else.
+local SWIM_JUMP_POWER = 1
+local SWIM_EDGE_REACH_STUDS = 8
+
+-- Parts that count as "an edge you could climb out onto": the solid road only.
+--
+-- Deliberately NOT the dock planks, rims or the side barriers. Those sit beside
+-- and through the middle of a pool, so counting them restored jump across most of
+-- the water and left the rule doing nothing where it matters. The road at a
+-- pool's start and end is the only place climbing out is meant to happen, and on
+-- a curve that road is the surviving RoadChord pieces either side of the pond.
+--
+-- Terrain is excluded too, for a different reason: the pool floor IS terrain and
+-- sits directly under every swimmer, so accepting it would restore jump
+-- everywhere.
+local SWIM_EDGE_PART_NAMES = {
+	Road = true,
+}
+
 local MovementModifier = {}
 
 -- os.clock() timestamp a player's WalkSpeed is scripted-owned until (e.g. by
@@ -87,6 +117,44 @@ local function environmentMultiplier(player: Player) : number
 	return entry.Multiplier
 end
 
+-- True if something climbable-out-of is within reach. A radius query rather than
+-- a raycast: the edge a swimmer wants is BESIDE them in some unknown direction,
+-- not below, and the pool floor below is exactly what must not count.
+--
+-- The bounds query is only a broad phase. GetPartBoundsInRadius matches
+-- axis-aligned BOUNDING BOXES, and the dock planks on a curve are long, thin and
+-- rotated — a ~28-stud plank at 45 degrees has an AABB roughly 20 studs across,
+-- so it was reported as "in reach" from 12.7 studs away and jump was never
+-- suppressed anywhere in the curve pond. Measured exactly that on the built
+-- track. Each candidate is therefore re-checked against its real oriented box:
+-- transform the player into the part's own space, clamp to the half-extents, and
+-- take the distance to that clamped point — the true distance to the surface.
+local function isNearWaterEdge(rootPart: BasePart) : boolean
+	local params = OverlapParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { rootPart.Parent :: Instance }
+	params.MaxParts = 32
+
+	local position = rootPart.Position
+	for _, part in workspace:GetPartBoundsInRadius(position, SWIM_EDGE_REACH_STUDS * 3, params) do
+		if not (SWIM_EDGE_PART_NAMES[part.Name] or part.Name:match("^RoadChord_")) then
+			continue
+		end
+
+		local localPosition = part.CFrame:PointToObjectSpace(position)
+		local half = part.Size / 2
+		local nearestOnBox = Vector3.new(
+			math.clamp(localPosition.X, -half.X, half.X),
+			math.clamp(localPosition.Y, -half.Y, half.Y),
+			math.clamp(localPosition.Z, -half.Z, half.Z)
+		)
+		if (localPosition - nearestOnBox).Magnitude <= SWIM_EDGE_REACH_STUDS then
+			return true
+		end
+	end
+	return false
+end
+
 local function recomputeForPlayer(player: Player)
 	local character = player.Character
 	if character == nil then
@@ -126,6 +194,16 @@ local function recomputeForPlayer(player: Player)
 	end
 
 	local state = humanoid:GetState()
+
+	-- Suppress jumping in open water, restore it at the edge. See
+	-- SWIM_JUMP_POWER for why this is not simply zero.
+	if state == Enum.HumanoidStateType.Swimming then
+		local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if rootPart ~= nil and not isNearWaterEdge(rootPart) then
+			humanoid.JumpPower = SWIM_JUMP_POWER
+		end
+	end
+
 	local speedStat: "WalkSpeed" | "ClimbSpeed" | "SwimSpeed"
 	if state == Enum.HumanoidStateType.Swimming then
 		speedStat = "SwimSpeed"

@@ -30,6 +30,7 @@ local EffectStackManager = require(script.Parent:WaitForChild("EffectStackManage
 local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
 
 local ProfileManager = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("ProfileManager"))
+local SkillRewardService = require(script.Parent.Parent:WaitForChild("EconomyAndData"):WaitForChild("SkillRewardService"))
 local SoundDirector = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("SoundDirector"))
 local VisualEffectsService = require(script.Parent.Parent:WaitForChild("CoreGameLoop"):WaitForChild("VisualEffectsService"))
 
@@ -89,6 +90,11 @@ local function activate(caster: Player, skillId: string, skillDefinition: SkillT
 			else `{skillDefinition.ActivationNoticeText} — {caster.DisplayName} CAST {skillName}`
 		Network.Track.ShowNotification:FireClient(player, notice)
 	end
+
+	-- The Idle gate let this through and the effect has gone out to the field,
+	-- so the cast succeeded. Before the task.spawn below, which is only the
+	-- Active -> Cooldown -> Idle wind-down.
+	SkillRewardService.GrantCastReward(caster, skillDefinition.CastType)
 
 	task.spawn(function()
 		task.wait(levelData.EffectDurationSeconds)

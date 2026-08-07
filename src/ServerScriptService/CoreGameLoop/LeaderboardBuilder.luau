@@ -61,11 +61,14 @@ local HubGenerator = require(script.Parent:WaitForChild("HubGenerator"))
 
 -- ===== Why the four boards are NOT all at the same radius =====
 --
--- `TrackBoundaryMonitor.ON_TRACK_MARGIN` is SegmentWidth/2 + BarrierThickness
--- + 10 = 49 studs from the track CENTERLINE, and an InLobby player inside
--- that ring is teleported straight back to the Hub. The oval is not a circle,
--- so that ring is a very different distance from the hub centre depending on
--- which way you walk:
+-- `TrackBoundaryMonitor.ON_TRACK_MARGIN` puts a ring around the track
+-- CENTERLINE, and an InLobby player inside it is teleported straight back to
+-- the Hub. The oval is not a circle, so that ring is a very different distance
+-- from the hub centre depending on which way you walk. The measurements below
+-- were taken when the margin was 49 studs; it has since been tightened to 39
+-- (SegmentWidth/2 + BarrierThickness — see that constant for why), which moves
+-- every bite point 10 studs FURTHER OUT and so only widens the clearance the
+-- radii below were chosen to get. They are left exactly as measured:
 --
 --   toward a STRAIGHT — its centerline is only CurveRadius = 180 from the
 --     centre, so the boundary bites at radius 131. Measured live: at r = 128

@@ -102,7 +102,7 @@ local function buildSteps() : { Step }
 		},
 		{
 			Title = "5. THE GRAND PRIX",
-			Body = "On the hour and half-hour, the whole server races for real prizes.\n\nThe clock on the left shows the next one. Tap JOIN GRAND PRIX to enter. Good luck!",
+			Body = "Every 12 minutes, the whole server races for real prizes.\n\nThe clock on the left shows the next one. Tap JOIN GRAND PRIX to enter. Good luck!",
 		},
 	}
 end

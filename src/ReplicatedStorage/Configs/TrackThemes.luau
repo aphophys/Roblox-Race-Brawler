@@ -108,7 +108,12 @@ local TrackThemes: TrackThemesType = {
 	NeonCircuit = {
 		Id = "NeonCircuit",
 		DisplayName = "Neon Circuit",
-		RoadColor = Color3.fromRGB(120, 40, 200),
+		-- Neon renders the colour at FULL brightness, so a "light" green made the
+		-- ordinary way — by raising every channel toward white — reads as a white
+		-- glare rather than a light green. Tried (150, 255, 130) and the road was
+		-- painfully white. Lightness on Neon has to come from the hue being clean
+		-- and the green channel leading, with red and blue kept well down.
+		RoadColor = Color3.fromRGB(70, 200, 95),
 		RoadMaterial = Enum.Material.Neon,
 		BarrierColor = Color3.fromRGB(255, 0, 200),
 		WalkSpeedModifier = 1.05,

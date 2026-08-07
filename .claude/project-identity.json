@@ -1,0 +1,16 @@
+﻿{
+    "schemaVersion":  1,
+    "project":  "RaceBrawler",
+    "engine":  "roblox",
+    "root":  "D:\\Claude\\Roblox\\Race Brawler\\Roblox Race Brawler",
+    "git":  {
+                "remote":  "https://github.com/aphophys/Roblox-Race-Brawler.git",
+                "branch":  "main"
+            },
+    "engineTargets":  {
+                          "placeId":  "95742062831533",
+                          "gameId":  "10608291731",
+                          "rojoPort":  34872
+                      },
+    "attestationTtlMinutes":  20
+}

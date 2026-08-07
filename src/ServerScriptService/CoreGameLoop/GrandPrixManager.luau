@@ -22,9 +22,9 @@
 
 	Scheduling is anchored to REAL-WORLD wall-clock time rather than to an
 	interval counted from whenever this particular server booted or finished
-	its last race: Grand Prix run at :00 and :30 of every hour — 8:00, 8:30,
-	9:00 — and every server in the game agrees on that without any of them
-	having to talk to each other. See nextScheduledStart().
+	its last race: Grand Prix run at :00, :12, :24, :36 and :48 of every hour
+	— 8:00, 8:12, 8:24 — and every server in the game agrees on that without
+	any of them having to talk to each other. See nextScheduledStart().
 
 	Who is "standing" is deliberately NOT tracked with its own bookkeeping.
 	ArcadeManager already owns lives, the revive-purchase window, and the
@@ -76,11 +76,11 @@ local COUNTDOWN_SECONDS = 15
 -- Only the last few seconds get a beep. Beeping for all 15 would be noise
 -- rather than a cue, and the on-screen timer already covers the long wait.
 local COUNTDOWN_BEEP_SECONDS = 3
--- The wall-clock slot size: one Grand Prix every 30 minutes, at :00 and :30.
--- Changing this changes the marks themselves (15 * 60 would give :00/:15/:30/
--- :45), so it wants to stay a whole divisor of an hour.
-local RACE_INTERVAL_SECONDS = 30 * 60
-local RACE_TIME_LIMIT_SECONDS = 5 * 60
+-- The wall-clock slot size: one Grand Prix every 12 minutes, at :00, :12, :24,
+-- :36 and :48. Changing this changes the marks themselves (30 * 60 would give
+-- :00/:30), so it wants to stay a whole divisor of an hour.
+local RACE_INTERVAL_SECONDS = 12 * 60
+local RACE_TIME_LIMIT_SECONDS = 4 * 60
 local GRAND_PRIX_LAPS = 2
 local MAX_LIVES = 3
 local TICK_SECONDS = 1
@@ -102,23 +102,23 @@ local CHECKPOINT_COUNT = #TrackBlueprints.OvalSegments
 
 local GrandPrixManager = {}
 
--- The next real-world :00/:30 mark strictly after `after`.
+-- The next real-world :00/:12/:24/:36/:48 mark strictly after `after`.
 --
 -- os.time() is UTC epoch seconds and the epoch itself falls on a :00, so whole
--- multiples of a 30-minute interval ARE the half-hour marks — no calendar
+-- multiples of a 12-minute interval ARE those marks — no calendar
 -- arithmetic is needed, and there is no daylight-saving edge case to get wrong
 -- because UTC has no DST. (Roblox servers run UTC regardless of where the
 -- machine or the player is; the client turns the timestamp into the player's
--- own local time for display, so a player in UTC+1 correctly reads 9:30.)
+-- own local time for display, so a player in UTC+1 correctly reads 9:24.)
 --
 -- STRICTLY after, not "at or after": this is called with the current time, and
 -- landing exactly on a mark would otherwise schedule a race for the instant
 -- that has just passed and fire it immediately.
 --
--- What this replaces: `os.time() + RACE_INTERVAL_SECONDS`, i.e. 30 minutes
+-- What this replaces: `os.time() + RACE_INTERVAL_SECONDS`, i.e. one interval
 -- counted from whenever this server last finished a race. That made the
--- schedule per-server and arbitrary — a server booted at 8:07 ran at 8:37,
--- 9:07, ... while the one next door ran 8:22, 8:52 — so "when is the next
+-- schedule per-server and arbitrary — a server booted at 8:07 ran at 8:19,
+-- 8:31, ... while the one next door ran 8:22, 8:34 — so "when is the next
 -- Grand Prix" had no answer that held anywhere except the server you happened
 -- to be standing in, and none that could be advertised anywhere outside the
 -- game.
@@ -537,7 +537,7 @@ local function enterWaiting()
 	-- The roster was just emptied, so every JOIN GRAND PRIX toggle in the
 	-- server is now stale-on. Enrolment is deliberately per-race rather than
 	-- sticky: a player who wandered off after one race shouldn't be silently
-	-- teleported into the next one 30 minutes later.
+	-- teleported into the next one 12 minutes later.
 	for _, player in Players:GetPlayers() do
 		Network.Hub.ToggleGrandPrixEntry:FireClient(player, false)
 	end
@@ -818,7 +818,7 @@ end
 --
 -- Joining mid-Racing is allowed on purpose: a late joiner just has less time
 -- and fewer laps banked, which is fairer than locking someone out of a
--- 30-minute cycle.
+-- 12-minute cycle.
 function GrandPrixManager.JoinGrandPrix(player: Player)
 	if racerStatuses[player] ~= nil then
 		return
@@ -852,13 +852,13 @@ end
 
 -- Brings the next Grand Prix forward to right now (it still runs the full
 -- Countdown). Server-side only, deliberately not exposed on any remote — a
--- 30-minute cadence is untestable and unadministrable otherwise, and every
+-- 12-minute cadence is untestable and unadministrable otherwise, and every
 -- alternative meant either shipping a shortened interval or reaching into
 -- this module's locals from outside.
 --
 -- This is a one-off jump, not a reschedule: enterWaiting() re-derives the next
 -- start from the wall clock when this race ends, so an off-schedule test race
--- puts the server back on the :00/:30 marks by itself.
+-- puts the server back on the :00/:12/:24/:36/:48 marks by itself.
 function GrandPrixManager.StartRaceNow()
 	if currentState ~= "Waiting" then
 		return

@@ -105,23 +105,31 @@ type LevelCurveParams = {
 	GoldCostStep: number,
 }
 
--- Exaggeration pass (explicit request): skill cost/unlock 10x, cooldown 2x,
--- effect duration 2x, effect magnitude 2x. Applied once here rather than
--- hand-editing every skill's curve params — every skill's numbers flow
--- through generateLevels (and UnlockGoldCost below, which isn't
--- curve-generated), so these constants are the single source of truth for
--- the whole pass.
-local GOLD_COST_MULTIPLIER = 10
+-- Global dials applied on top of every skill's curve params, rather than
+-- hand-editing ~17 skills — every skill's numbers flow through generateLevels
+-- (and UnlockGoldCost below, which isn't curve-generated), so these constants
+-- are the single source of truth.
+--
+-- They began as an "exaggeration pass" (cost/unlock 10x, cooldown 2x, duration
+-- 2x then 4x, magnitude 2x). Cost and duration have since been dialled back to
+-- 1x — i.e. gold prices and durations are now exactly what each skill's curve
+-- params say — while cooldown and magnitude are still doubled here. Read each
+-- constant's own value below rather than assuming the pass is uniform.
+local GOLD_COST_MULTIPLIER = 1
 local COOLDOWN_MULTIPLIER = 2
--- Doubled again (2 -> 4) on a later pass asking for "double duration of all
--- skills and steps". Both halves come out of this one constant: it multiplies
--- the whole `BaseDuration + stepsPast1 * DurationStep` expression below, so
--- the per-level STEP doubles along with the level-1 base and the curve keeps
--- its shape instead of flattening. Nothing else in the codebase carries a
--- skill duration — every manager reads EffectDurationSeconds from here — with
--- the two deliberate exceptions noted at StackingRules.ImmunityDurationSeconds
--- and SelfSkillManager.JUMP_FLIGHT_DURATION_SECONDS.
-local DURATION_MULTIPLIER = 4
+-- Now 1, so EffectDurationSeconds is exactly each skill's own
+-- `BaseDuration + stepsPast1 * DurationStep`. It went 2 -> 4 across two
+-- "double the durations" passes and then back to 1 once the per-skill bases
+-- were retuned to the values wanted outright, which is why the curve params
+-- below read as real seconds.
+--
+-- It multiplies the WHOLE expression, so if it is ever moved off 1 again the
+-- per-level STEP scales with the level-1 base and the curve keeps its shape
+-- instead of flattening. Nothing else in the codebase carries a skill duration
+-- — every manager reads EffectDurationSeconds from here — with the two
+-- deliberate exceptions noted at StackingRules.ImmunityDurationSeconds and
+-- SelfSkillManager.JUMP_FLIGHT_DURATION_SECONDS.
+local DURATION_MULTIPLIER = 1
 -- The multiplier movement TRAVERSAL times are tuned against, frozen at the
 -- value DURATION_MULTIPLIER held when the dash distances were set. It is a
 -- separate constant precisely so that raising DURATION_MULTIPLIER — a buff
@@ -196,7 +204,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "SLOWED DOWN!",
 		Levels = generateLevels({
 			MaxLevel = 3, BaseCooldown = 45, CooldownStep = 5, MinCooldown = 35,
-			BaseMagnitude = 0.75, MagnitudeStep = -0.05, BaseDuration = 4, DurationStep = 1,
+			BaseMagnitude = 0.75, MagnitudeStep = -0.05, BaseDuration = 5, DurationStep = 1,
 			BaseGoldCost = 300, GoldCostStep = 250,
 		}),
 	},
@@ -207,7 +215,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "CONTROLS SCRAMBLED!",
 		Levels = generateLevels({
 			MaxLevel = 3, BaseCooldown = 60, CooldownStep = 5, MinCooldown = 50,
-			BaseDuration = 3, DurationStep = 1, BaseGoldCost = 400, GoldCostStep = 300,
+			BaseDuration = 5, DurationStep = 1, BaseGoldCost = 400, GoldCostStep = 300,
 		}),
 	},
 
@@ -220,7 +228,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "SWAPPED PLACES!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 12, CooldownStep = 0.4, MinCooldown = 8,
-			BaseRange = 20, RangeStep = 1.5, BaseGoldCost = 100, GoldCostStep = 40,
+			BaseRange = 40, RangeStep = 4, BaseGoldCost = 100, GoldCostStep = 40,
 		}),
 	},
 	ReverseControlTarget = {
@@ -230,7 +238,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "RUNNING BACKWARD!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 18, CooldownStep = 0.6, MinCooldown = 12,
-			BaseRange = 18, RangeStep = 1, BaseDuration = 2.5, DurationStep = 0.3,
+			BaseRange = 30, RangeStep = 3, BaseDuration = 3, DurationStep = 0.5,
 			BaseGoldCost = 150, GoldCostStep = 50,
 		}),
 	},
@@ -241,8 +249,8 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "SLOWED DOWN!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 10, CooldownStep = 0.3, MinCooldown = 7,
-			BaseRange = 22, RangeStep = 1.2, BaseMagnitude = 0.70, MagnitudeStep = -0.02,
-			BaseDuration = 3, DurationStep = 0.2, BaseGoldCost = 120, GoldCostStep = 40,
+			BaseRange = 30, RangeStep = 3, BaseMagnitude = 0.70, MagnitudeStep = -0.02,
+			BaseDuration = 3, DurationStep = 0.5, BaseGoldCost = 120, GoldCostStep = 40,
 		}),
 	},
 	WeightTarget = { -- RECOMMENDED: jump/climb-focused debuff, distinct from the speed-focused SlowTarget
@@ -252,8 +260,8 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "WEIGHED DOWN!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 14, CooldownStep = 0.4, MinCooldown = 10,
-			BaseRange = 18, RangeStep = 1, BaseMagnitude = 0.65, MagnitudeStep = -0.02,
-			BaseDuration = 3, DurationStep = 0.25, BaseGoldCost = 150, GoldCostStep = 45,
+			BaseRange = 30, RangeStep = 3, BaseMagnitude = 0.65, MagnitudeStep = -0.02,
+			BaseDuration = 3, DurationStep = 0.5, BaseGoldCost = 150, GoldCostStep = 45,
 		}),
 	},
 	BlindTarget = { -- RECOMMENDED: control-scramble variant on a single target (vs. ReverseControl's invert)
@@ -263,7 +271,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "BLINDED!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 16, CooldownStep = 0.5, MinCooldown = 11,
-			BaseRange = 16, RangeStep = 1, BaseDuration = 2, DurationStep = 0.25,
+			BaseRange = 30, RangeStep = 3, BaseDuration = 3, DurationStep = 0.5,
 			BaseGoldCost = 140, GoldCostStep = 45,
 		}),
 	},
@@ -274,8 +282,8 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "SHOCKED!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 20, CooldownStep = 0.6, MinCooldown = 14,
-			BaseRange = 14, RangeStep = 0.8, BaseMagnitude = 0.15, MagnitudeStep = -0.01,
-			BaseDuration = 1, DurationStep = 0.15, BaseGoldCost = 200, GoldCostStep = 60,
+			BaseRange = 20, RangeStep = 2, BaseMagnitude = 0.6, MagnitudeStep = -0.01,
+			BaseDuration = 2, DurationStep = 0.4, BaseGoldCost = 200, GoldCostStep = 60,
 		}),
 	},
 	SiphonPulse = { -- RECOMMENDED: offensive Dispel, per spec's "other special effect is dispel"
@@ -285,7 +293,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "BUFFS STOLEN!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 25, CooldownStep = 0.8, MinCooldown = 16,
-			BaseRange = 20, RangeStep = 1, BaseDispelCount = 1, DispelCountStep = 0.25,
+			BaseRange = 30, RangeStep = 3, BaseDispelCount = 1, DispelCountStep = 0.25,
 			MaxDispelCount = SkillEffects.StackingRules.DispelMaxCount, BaseGoldCost = 250, GoldCostStep = 70,
 		}),
 	},
@@ -299,7 +307,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "DASHING!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 8, CooldownStep = 0.3, MinCooldown = 4,
-			BaseRange = 16, RangeStep = 1.2, BaseMagnitude = 1.5, MagnitudeStep = 0.03,
+			BaseRange = 16, RangeStep = 1.2, BaseMagnitude = 1.8, MagnitudeStep = 0.2,
 			BaseDuration = 0.4, DurationStep = 0.02, BaseGoldCost = 100, GoldCostStep = 35,
 		}),
 	},
@@ -321,7 +329,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "SPEED BOOST!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 10, CooldownStep = 0.3, MinCooldown = 6,
-			BaseMagnitude = 1.2, MagnitudeStep = 0.02, BaseDuration = 3, DurationStep = 0.2,
+			BaseMagnitude = 1.4, MagnitudeStep = 0.4, BaseDuration = 3, DurationStep = 0.3,
 			BaseGoldCost = 100, GoldCostStep = 35,
 		}),
 	},
@@ -332,7 +340,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "SWIM BURST!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 9, CooldownStep = 0.3, MinCooldown = 5,
-			BaseMagnitude = 1.25, MagnitudeStep = 0.025, BaseDuration = 3, DurationStep = 0.2,
+			BaseMagnitude = 1.5, MagnitudeStep = 0.4, BaseDuration = 3, DurationStep = 0.3,
 			BaseGoldCost = 100, GoldCostStep = 35,
 		}),
 	},
@@ -343,7 +351,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "CLIMB GRIP!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 9, CooldownStep = 0.3, MinCooldown = 5,
-			BaseMagnitude = 1.25, MagnitudeStep = 0.025, BaseDuration = 3, DurationStep = 0.2,
+			BaseMagnitude = 1.6, MagnitudeStep = 0.2, BaseDuration = 3, DurationStep = 0.3,
 			BaseGoldCost = 100, GoldCostStep = 35,
 		}),
 	},
@@ -354,7 +362,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "SHIELDED!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 30, CooldownStep = 1, MinCooldown = 18,
-			BaseDuration = 3, DurationStep = 0.3, BaseGoldCost = 200, GoldCostStep = 60,
+			BaseDuration = 5, DurationStep = 0.5, BaseGoldCost = 200, GoldCostStep = 60,
 		}),
 	},
 	PhaseSelf = { -- RECOMMENDED: immunity to physical hazard knockback specifically, distinct from ShieldSelf's debuff immunity
@@ -364,7 +372,7 @@ local SkillTrees: SkillTreesType = {
 		ActivationNoticeText = "PHASED!",
 		Levels = generateLevels({
 			MaxLevel = 10, BaseCooldown = 35, CooldownStep = 1.2, MinCooldown = 20,
-			BaseDuration = 2, DurationStep = 0.2, BaseGoldCost = 220, GoldCostStep = 65,
+			BaseDuration = 3, DurationStep = 0.3, BaseGoldCost = 220, GoldCostStep = 65,
 		}),
 	},
 	CleansePulse = { -- RECOMMENDED: defensive Dispel, the other half of the spec's dispel requirement
